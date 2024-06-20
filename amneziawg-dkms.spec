@@ -40,6 +40,11 @@ many different circumstances. It runs over UDP.
 # Fix the Makefile for CentOS7 since it ships coreutils from 2013.
 sed -i 's/install .* -D -t\(.\+\) /mkdir -p \1 \&\& \0/' %{_builddir}/amneziawg-linux-kernel-module-%{version}/src/Makefile
 
+# Set version in dkms.conf and Makefile
+sed -i "s/^PACKAGE_VERSION=.*/PACKAGE_VERSION=\"%{version}\"/" %{_builddir}/amneziawg-linux-kernel-module-%{version}/src/dkms.conf
+sed -i "s/^MAKE\[0\]=\"make -C \/var\/lib\/dkms\/amneziawg\/.*/MAKE[0]=\"make -C \/var\/lib\/dkms\/amneziawg\/%{version}\/build\"/" %{_builddir}/amneziawg-linux-kernel-module-%{version}/src/dkms.conf
+sed -i "s/^WIREGUARD_VERSION = .*/WIREGUARD_VERSION = %{version}/" %{_builddir}/amneziawg-linux-kernel-module-%{version}/src/Makefile
+
 
 %build
 

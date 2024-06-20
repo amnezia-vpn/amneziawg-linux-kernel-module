@@ -81,9 +81,11 @@ else
   rm -rf "${HOME}/.rpmmacros"
   [ -f "${HOME}/.rpmmacros.orig" ] && mv "${HOME}/.rpmmacros.orig" "${HOME}/.rpmmacros"
   cd ../BUILD || exit 255
+  cd "$(ls -d */)" || exit 255
+  cd "$(ls -d */)" || exit 255
 fi
 
-KERNEL_PATH=$(pwd)
+KERNEL_PATH="$(pwd)"
 popd > /dev/null 2>&1 || exit 1
 [ -e kernel ] && rm -f kernel
 ln -s "${KERNEL_PATH}" kernel
