@@ -36,12 +36,13 @@ Open `Terminal` and do next steps:
    at least one line starting with `deb-src` is present and uncommented.
 3. Execute following commands:
 ```shell
-sudo apt install -y software-properties-common python3-launchpadlib gnupg2 linux-headers-$(uname -r)
-sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 57290828
-echo "deb https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main" | sudo tee -a /etc/apt/sources.list
-echo "deb-src https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main" | sudo tee -a /etc/apt/sources.list
-sudo apt-get update
-sudo apt-get install -y amneziawg
+$ sudo apt-get install --yes gnupg2 apt-transport-https
+$ gpg --keyserver keyserver.ubuntu.com --recv-keys 75c9dd72c799870e310542e24166f2c257290828
+$ gpg --export 75c9dd72c799870e310542e24166f2c257290828 | sudo tee /usr/share/keyrings/amnezia.gpg > /dev/null
+$ echo "deb [signed-by=/usr/share/keyrings/amnezia.gpg] https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main" | sudo tee -a /etc/apt/sources.list.d/amnezia.list
+$ echo "deb-src [signed-by=/usr/share/keyrings/amnezia.gpg] https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main" | sudo tee -a /etc/apt/sources.list.d/amnezia.list
+$ sudo apt-get update
+$ sudo apt-get install --yes amneziawg amneziawg-tools
 ```
 
 ### Linux Mint
