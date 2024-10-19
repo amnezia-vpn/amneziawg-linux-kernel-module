@@ -27,16 +27,6 @@ if [ -e kernel/drivers/net/wireguard/main.c ] && [ -e kernel/include/uapi/linux/
   exit 0
 fi
 
-if ! which apt-get > /dev/null 2>&1 && \
-   ! which dnf > /dev/null 2>&1 && \
-   ! which yum > /dev/null 2>&1; then
-  echo "You need to download sources on your own and make a symbolic link to /usr/src/amneziawg-1.0.0/kernel:"
-  echo ""
-  echo "  ln -s /path/to/kernel/source /usr/src/amneziawg-1.0.0/kernel"
-  echo ""
-  echo "Otherwise it is not possible to obtain kernel sources on your system automatically"
-  exit 1
-fi
 
 DISTRO_FLAVOR=$(cat /etc/*-release 2>/dev/null | grep -E ^ID_LIKE=  | sed 's/ID_LIKE=//' | sed 's/"//g')
 DISTRO_FLAVOR=${DISTRO_FLAVOR:-$(cat /etc/*-release 2>/dev/null | grep -E ^ID=  | sed 's/ID=//' | sed 's/"//g')}
@@ -73,6 +63,17 @@ if [[ "${DISTRO_FLAVOR}" =~ debian ]]; then
   echo "Downloading as $(whoami)"
   apt-get -yq -o APT::Sandbox::User="$(whoami)" source "${PACKAGE_NAME}=${PACKAGE_VERSION}"
   cd "$(ls -d */)" || exit 255
+elif ! which dnf > /dev/null 2>&1 && \
+   ! which yum > /dev/null 2>&1; then
+  echo "Script will now try to download wireguard source code from kernel.org"
+  echo "If this step fails you will need to download sources on your own and make a symbolic link to /usr/src/amneziawg-1.0.0/kernel:"
+  echo ""
+  echo "  ln -s /path/to/kernel/source /usr/src/amneziawg-1.0.0/kernel"
+  echo ""
+  VERSION="${KERNEL_VERSION%%[^0-9.]*}"
+  VERSION_MAJOR="${KERNEL_VERSION%%[^0-9]*}"
+  wget --no-verbose -O - "https://cdn.kernel.org/pub/linux/kernel/v${VERSION_MAJOR}.x/linux-${VERSION}.tar.xz" | tar -xvJf - "linux-${VERSION}/drivers/net/wireguard" "linux-${VERSION}/include/uapi/linux"
+  cd "linux-${VERSION}" || exit 255
 else
   yumdownloader --source kernel
   [ -f "${HOME}/.rpmmacros" ] && mv "${HOME}/.rpmmacros" "${HOME}/.rpmmacros.orig"
