@@ -63,7 +63,7 @@ $(GENERATED_SOURCES_DIR)/.patches.stamp: $(sort $(wildcard $(PWD)/patches/*.patc
 	CWD=$$(pwd); \
 	cd $(GENERATED_SOURCES_DIR); \
 	for patch in $^; do \
-		patch -F3 -t -p0 -i $$patch; \
+		patch -F3 -t -p0 -i $$patch || exit $$?; \
 	done; \
 	cd $$CWD; \
 	date > $(GENERATED_SOURCES_DIR)/.patches.stamp
