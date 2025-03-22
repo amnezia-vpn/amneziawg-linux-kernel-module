@@ -15,6 +15,8 @@
 #include <linux/mutex.h>
 #include <linux/kref.h>
 
+#define REKEY_TIMEOUT 180
+
 struct noise_replay_counter {
 	u64 counter;
 	spinlock_t lock;

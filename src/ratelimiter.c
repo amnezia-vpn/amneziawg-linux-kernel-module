@@ -20,6 +20,7 @@
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <net/ip.h>
+#include <net/ipv6.h>
 
 static struct kmem_cache *entry_cache;
 static hsiphash_key_t key;
@@ -34,6 +35,9 @@ static struct hlist_head *table_v4;
 #if IS_ENABLED(CONFIG_IPV6)
 static struct hlist_head *table_v6;
 #endif
+
+/* Forward declaration for module parameter */
+extern bool enable_ratelimiter;
 
 struct ratelimiter_entry {
 	u64 last_time_ns, tokens, ip;
@@ -95,6 +99,9 @@ static void wg_ratelimiter_gc_entries(struct work_struct *work)
 
 bool wg_ratelimiter_allow(struct sk_buff *skb, struct net *net)
 {
+	if (!enable_ratelimiter)
+		return true;
+
 	/* We only take the bottom half of the net pointer, so that we can hash
 	 * 3 words in the end. This way, siphash's len param fits into the final
 	 * u32, and we don't incur an extra round.

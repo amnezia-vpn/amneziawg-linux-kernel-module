@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
@@ -290,7 +289,7 @@ static void wg_setup(struct net_device *dev)
 	dev->features |= WG_NETDEV_FEATURES;
 	dev->hw_features |= WG_NETDEV_FEATURES;
 	dev->hw_enc_features |= WG_NETDEV_FEATURES;
-	dev->mtu = ETH_DATA_LEN - overhead;
+	dev->mtu = 1420;
 #ifndef COMPAT_CANNOT_USE_MAX_MTU
 	dev->max_mtu = round_down(INT_MAX, MESSAGE_PADDING_MULTIPLE) - overhead;
 #endif
@@ -343,7 +342,7 @@ static int wg_newlink(struct net *src_net, struct net_device *dev,
 		goto err_destroy_handshake_receive;
 
 	wg->packet_crypt_wq = alloc_workqueue("wg-crypt-%s",
-			WQ_CPU_INTENSIVE | WQ_MEM_RECLAIM, 0, dev->name);
+			WQ_CPU_INTENSIVE | WQ_MEM_RECLAIM, 1, dev->name);
 	if (!wg->packet_crypt_wq)
 		goto err_destroy_handshake_send;
 
@@ -358,7 +357,7 @@ static int wg_newlink(struct net *src_net, struct net_device *dev,
 		goto err_free_encrypt_queue;
 
 	ret = wg_packet_queue_init(&wg->handshake_queue, wg_packet_handshake_receive_worker,
-				   MAX_QUEUED_INCOMING_HANDSHAKES);
+				   MAX_QUEUED_HANDSHAKES);
 	if (ret < 0)
 		goto err_free_decrypt_queue;
 
@@ -381,6 +380,480 @@ static int wg_newlink(struct net *src_net, struct net_device *dev,
 	wg->advanced_security_config.response_packet_magic_header = MESSAGE_HANDSHAKE_RESPONSE;
 	wg->advanced_security_config.cookie_packet_magic_header = MESSAGE_HANDSHAKE_COOKIE;
 	wg->advanced_security_config.transport_packet_magic_header = MESSAGE_DATA;
+	
+	/* Set advanced security to disabled by default, controlled by module parameter */
+	wg->advanced_security_config.advanced_security = false;
+
+	pr_debug("%s: Interface created\n", dev->name);
+	return ret;
+
+err_uninit_ratelimiter:
+	wg_ratelimiter_uninit();
+err_free_handshake_queue:
+	wg_packet_queue_free(&wg->handshake_queue, false);
+err_free_decrypt_queue:
+	wg_packet_queue_free(&wg->decrypt_queue, false);
+err_free_encrypt_queue:
+	wg_packet_queue_free(&wg->encrypt_queue, false);
+err_destroy_packet_crypt:
+	destroy_workqueue(wg->packet_crypt_wq);
+err_destroy_handshake_send:
+	destroy_workqueue(wg->handshake_send_wq);
+err_destroy_handshake_receive:
+	destroy_workqueue(wg->handshake_receive_wq);
+err_free_tstats:
+	free_percpu(dev->tstats);
+err_free_index_hashtable:
+	kvfree(wg->index_hashtable);
+err_free_peer_hashtable:
+	kvfree(wg->peer_hashtable);
+	return ret;
+}
+
+static struct rtnl_link_ops link_ops __read_mostly = {
+	.kind			= KBUILD_MODNAME,
+	.priv_size		= sizeof(struct wg_device),
+	.setup			= wg_setup,
+	.newlink		= wg_newlink,
+};
+
+static void wg_netns_pre_exit(struct net *net)
+{
+	struct wg_device *wg;
+	struct wg_peer *peer;
+
+	rtnl_lock();
+	list_for_each_entry(wg, &device_list, device_list) {
+		if (rcu_access_pointer(wg->creating_net) == net) {
+			pr_debug("%s: Creating namespace exiting\n", wg->dev->name);
+			netif_carrier_off(wg->dev);
+			mutex_lock(&wg->device_update_lock);
+			rcu_assign_pointer(wg->creating_net, NULL);
+			wg_socket_reinit(wg, NULL, NULL);
+			list_for_each_entry(peer, &wg->peer_list, peer_list)
+				wg_socket_clear_peer_endpoint_src(peer);
+			mutex_unlock(&wg->device_update_lock);
+		}
+	}
+	rtnl_unlock();
+}
+
+static struct pernet_operations pernet_ops = {
+	.pre_exit = wg_netns_pre_exit
+};
+
+int __init wg_device_init(void)
+{
+	int ret;
+
+#ifdef CONFIG_PM_SLEEP
+	ret = register_pm_notifier(&pm_notifier);
+	if (ret)
+		return ret;
+#endif
+
+	ret = register_pernet_device(&pernet_ops);
+	if (ret)
+		goto error_pm;
+
+	ret = rtnl_link_register(&link_ops);
+	if (ret)
+		goto error_pernet;
+
+	return 0;
+
+error_pernet:
+	unregister_pernet_device(&pernet_ops);
+error_pm:
+#ifdef CONFIG_PM_SLEEP
+	unregister_pm_notifier(&pm_notifier);
+#endif
+	return ret;
+}
+
+void wg_device_uninit(void)
+{
+	rtnl_link_unregister(&link_ops);
+	unregister_pernet_device(&pernet_ops);
+#ifdef CONFIG_PM_SLEEP
+	unregister_pm_notifier(&pm_notifier);
+#endif
+	rcu_barrier();
+}
+
+int wg_device_handle_post_config(struct net_device *dev, struct amnezia_config *asc)
+{
+	struct wg_device *wg = netdev_priv(dev);
+	bool a_sec_on = false;
+	int ret = 0;
+
+	if (!asc->advanced_security)
+		goto out;
+
+	if (asc->junk_packet_count < 0) {
+		net_dbg_ratelimited("%s: JunkPacketCount should be non negative\n", dev->name);
+		ret = -EINVAL;
+	}
+
+	wg->advanced_security_config.junk_packet_count = asc->junk_packet_count;
+	if (asc->junk_packet_count != 0)
+		a_sec_on = true;
+
+	wg->advanced_security_config.junk_packet_min_size = asc->junk_packet_min_size;
+	if (asc->junk_packet_min_size != 0)
+		a_sec_on = true;
+
+	if (asc->junk_packet_count > 0 && asc->junk_packet_min_size == asc->junk_packet_max_size)
+		asc->junk_packet_max_size++;
+
+	if (asc->junk_packet_max_size >= MESSAGE_MAX_SIZE) {
+		wg->advanced_security_config.junk_packet_min_size = 0;
+		wg->advanced_security_config.junk_packet_max_size = 1;
+
+		net_dbg_ratelimited("%s: JunkPacketMaxSize: %d; should be smaller than maxSegmentSize: %d\n",
+							dev->name, asc->junk_packet_max_size,
+							MESSAGE_MAX_SIZE);
+		ret = -EINVAL;
+	} else if (asc->junk_packet_max_size < asc->junk_packet_min_size) {
+		net_dbg_ratelimited("%s: maxSize: %d; should be greater than minSize: %d\n",
+							dev->name, asc->junk_packet_max_size,
+							asc->junk_packet_min_size);
+		ret = -EINVAL;
+	} else
+		wg->advanced_security_config.junk_packet_max_size = asc->junk_packet_max_size;
+
+	if (asc->junk_packet_max_size != 0)
+		a_sec_on = true;
+
+	if (asc->init_packet_junk_size + MESSAGE_INITIATION_SIZE >= MESSAGE_MAX_SIZE) {
+		net_dbg_ratelimited("%s: init header size (%d) + junkSize (%d) should be smaller than maxSegmentSize: %d\n",
+		                    dev->name, MESSAGE_INITIATION_SIZE,
+							asc->init_packet_junk_size, MESSAGE_MAX_SIZE);
+		ret = -EINVAL;
+	} else
+		wg->advanced_security_config.init_packet_junk_size = asc->init_packet_junk_size;
+
+	if (asc->init_packet_junk_size != 0)
+		a_sec_on = true;
+
+	if (asc->response_packet_junk_size + MESSAGE_RESPONSE_SIZE >= MESSAGE_MAX_SIZE) {
+		net_dbg_ratelimited("%s: response header size (%d) + junkSize (%d) should be smaller than maxSegmentSize: %d\n",
+		                    dev->name, MESSAGE_RESPONSE_SIZE,
+		                    asc->response_packet_junk_size, MESSAGE_MAX_SIZE);
+		ret = -EINVAL;
+	} else
+		wg->advanced_security_config.response_packet_junk_size = asc->response_packet_junk_size;
+
+	if (asc->response_packet_junk_size != 0)
+		a_sec_on = true;
+
+	if (asc->init_packet_magic_header > MESSAGE_DATA) {
+		a_sec_on = true;
+		wg->advanced_security_config.init_packet_magic_header = asc->init_packet_magic_header;
+	}
+
+	if (asc->response_packet_magic_header > MESSAGE_DATA) {
+		a_sec_on = true;
+		wg->advanced_security_config.response_packet_magic_header = asc->response_packet_magic_header;
+	}
+
+	if (asc->cookie_packet_magic_header > MESSAGE_DATA) {
+		a_sec_on = true;
+		wg->advanced_security_config.cookie_packet_magic_header = asc->cookie_packet_magic_header;
+	}
+
+	if (asc->transport_packet_magic_header > MESSAGE_DATA) {
+		a_sec_on = true;
+		wg->advanced_security_config.transport_packet_magic_header = asc->transport_packet_magic_header;
+	}
+
+	if (wg->advanced_security_config.init_packet_magic_header == wg->advanced_security_config.response_packet_magic_header ||
+			wg->advanced_security_config.init_packet_magic_header == wg->advanced_security_config.cookie_packet_magic_header ||
+			wg->advanced_security_config.init_packet_magic_header == wg->advanced_security_config.transport_packet_magic_header ||
+			wg->advanced_security_config.response_packet_magic_header == wg->advanced_security_config.cookie_packet_magic_header ||
+			wg->advanced_security_config.response_packet_magic_header == wg->advanced_security_config.transport_packet_magic_header ||
+			wg->advanced_security_config.cookie_packet_magic_header == wg->advanced_security_config.transport_packet_magic_header) {
+		net_dbg_ratelimited("%s: magic headers should differ; got: init:%d; recv:%d; unde:%d; tran:%d\n",
+		                    dev->name,
+							wg->advanced_security_config.init_packet_magic_header,
+							wg->advanced_security_config.response_packet_magic_header,
+							wg->advanced_security_config.cookie_packet_magic_header,
+							wg->advanced_security_config.transport_packet_magic_header);
+		ret = -EINVAL;
+	}
+
+	if (MESSAGE_INITIATION_SIZE + wg->advanced_security_config.init_packet_junk_size ==
+		MESSAGE_RESPONSE_SIZE + wg->advanced_security_config.response_packet_junk_size) {
+		net_dbg_ratelimited("%s: new init size:%d; and new response size:%d; should differ\n",
+		                    dev->name,
+		                    MESSAGE_INITIATION_SIZE + asc->init_packet_junk_size,
+		                    MESSAGE_RESPONSE_SIZE + asc->response_packet_junk_size);
+		ret = -EINVAL;
+	}
+
+	wg->advanced_security_config.advanced_security = a_sec_on;
+out:
+	return ret;
+}
+
+static netdev_tx_t wg_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	struct wg_device *wg = netdev_priv(dev);
+	struct sk_buff_head packets;
+	struct wg_peer *peer;
+	struct sk_buff *next;
+	sa_family_t family;
+	u32 mtu;
+	int ret;
+
+	if (unlikely(!wg_check_packet_protocol(skb))) {
+		ret = -EPROTONOSUPPORT;
+		net_dbg_ratelimited("%s: Invalid IP packet\n", dev->name);
+		goto err;
+	}
+
+	peer = wg_allowedips_lookup_dst(&wg->peer_allowedips, skb);
+	if (unlikely(!peer)) {
+		ret = -ENOKEY;
+		if (skb->protocol == htons(ETH_P_IP))
+			net_dbg_ratelimited("%s: No peer has allowed IPs matching %pI4\n",
+					    dev->name, &ip_hdr(skb)->daddr);
+		else if (skb->protocol == htons(ETH_P_IPV6))
+			net_dbg_ratelimited("%s: No peer has allowed IPs matching %pI6\n",
+					    dev->name, &ipv6_hdr(skb)->daddr);
+		goto err_icmp;
+	}
+
+	family = READ_ONCE(peer->endpoint.addr.sa_family);
+	if (unlikely(family != AF_INET && family != AF_INET6)) {
+		ret = -EDESTADDRREQ;
+		net_dbg_ratelimited("%s: No valid endpoint has been configured or discovered for peer %llu\n",
+				    dev->name, peer->internal_id);
+		goto err_peer;
+	}
+
+	mtu = skb_valid_dst(skb) ? dst_mtu(skb_dst(skb)) : dev->mtu;
+
+	__skb_queue_head_init(&packets);
+	if (!skb_is_gso(skb)) {
+		skb_mark_not_on_list(skb);
+	} else {
+		struct sk_buff *segs = skb_gso_segment(skb, 0);
+
+		if (IS_ERR(segs)) {
+			ret = PTR_ERR(segs);
+			goto err_peer;
+		}
+		dev_kfree_skb(skb);
+		skb = segs;
+	}
+
+	skb_list_walk_safe(skb, skb, next) {
+		skb_mark_not_on_list(skb);
+
+		skb = skb_share_check(skb, GFP_ATOMIC);
+		if (unlikely(!skb))
+			continue;
+
+		/* We only need to keep the original dst around for icmp,
+		 * so at this point we're in a position to drop it.
+		 */
+		skb_dst_drop(skb);
+
+		PACKET_CB(skb)->mtu = mtu;
+
+		__skb_queue_tail(&packets, skb);
+	}
+
+	spin_lock_bh(&peer->staged_packet_queue.lock);
+	/* If the queue is getting too big, we start removing the oldest packets
+	 * until it's small again. We do this before adding the new packet, so
+	 * we don't remove GSO segments that are in excess.
+	 */
+	while (skb_queue_len(&peer->staged_packet_queue) > MAX_STAGED_PACKETS) {
+		dev_kfree_skb(__skb_dequeue(&peer->staged_packet_queue));
+		++dev->stats.tx_dropped;
+	}
+	skb_queue_splice_tail(&packets, &peer->staged_packet_queue);
+	spin_unlock_bh(&peer->staged_packet_queue.lock);
+
+	wg_packet_send_staged_packets(peer);
+
+	wg_peer_put(peer);
+	return NETDEV_TX_OK;
+
+err_peer:
+	wg_peer_put(peer);
+err_icmp:
+	if (skb->protocol == htons(ETH_P_IP))
+		icmp_ndo_send(skb, ICMP_DEST_UNREACH, ICMP_HOST_UNREACH, 0);
+	else if (skb->protocol == htons(ETH_P_IPV6))
+		icmpv6_ndo_send(skb, ICMPV6_DEST_UNREACH, ICMPV6_ADDR_UNREACH, 0);
+err:
+	++dev->stats.tx_errors;
+	kfree_skb(skb);
+	return ret;
+}
+
+static const struct net_device_ops netdev_ops = {
+	.ndo_open		= wg_open,
+	.ndo_stop		= wg_stop,
+	.ndo_start_xmit		= wg_xmit,
+	.ndo_get_stats64	= ip_tunnel_get_stats64
+};
+
+static void wg_destruct(struct net_device *dev)
+{
+	struct wg_device *wg = netdev_priv(dev);
+
+	rtnl_lock();
+	list_del(&wg->device_list);
+	rtnl_unlock();
+	mutex_lock(&wg->device_update_lock);
+	rcu_assign_pointer(wg->creating_net, NULL);
+	wg->incoming_port = 0;
+	wg_socket_reinit(wg, NULL, NULL);
+	/* The final references are cleared in the below calls to destroy_workqueue. */
+	wg_peer_remove_all(wg);
+	destroy_workqueue(wg->handshake_receive_wq);
+	destroy_workqueue(wg->handshake_send_wq);
+	destroy_workqueue(wg->packet_crypt_wq);
+	wg_packet_queue_free(&wg->handshake_queue, true);
+	wg_packet_queue_free(&wg->decrypt_queue, false);
+	wg_packet_queue_free(&wg->encrypt_queue, false);
+	rcu_barrier(); /* Wait for all the peers to be actually freed. */
+	wg_ratelimiter_uninit();
+	memzero_explicit(&wg->static_identity, sizeof(wg->static_identity));
+	free_percpu(dev->tstats);
+	kvfree(wg->index_hashtable);
+	kvfree(wg->peer_hashtable);
+	mutex_unlock(&wg->device_update_lock);
+
+	pr_debug("%s: Interface destroyed\n", dev->name);
+	free_netdev(dev);
+}
+
+static const struct device_type device_type = { .name = KBUILD_MODNAME };
+
+static void wg_setup(struct net_device *dev)
+{
+	struct wg_device *wg = netdev_priv(dev);
+	enum { WG_NETDEV_FEATURES = NETIF_F_HW_CSUM | NETIF_F_RXCSUM |
+				    NETIF_F_SG | NETIF_F_GSO |
+				    NETIF_F_GSO_SOFTWARE | NETIF_F_HIGHDMA };
+	const int overhead = MESSAGE_MINIMUM_LENGTH + sizeof(struct udphdr) +
+			     max(sizeof(struct ipv6hdr), sizeof(struct iphdr));
+
+	dev->netdev_ops = &netdev_ops;
+	dev->header_ops = &ip_tunnel_header_ops;
+	dev->hard_header_len = 0;
+	dev->addr_len = 0;
+	dev->needed_headroom = DATA_PACKET_HEAD_ROOM;
+	dev->needed_tailroom = noise_encrypted_len(MESSAGE_PADDING_MULTIPLE);
+	dev->type = ARPHRD_NONE;
+	dev->flags = IFF_POINTOPOINT | IFF_NOARP;
+#ifndef COMPAT_CANNOT_USE_IFF_NO_QUEUE
+	dev->priv_flags |= IFF_NO_QUEUE;
+#else
+	dev->tx_queue_len = 0;
+#endif
+	dev->features |= NETIF_F_LLTX;
+	dev->features |= WG_NETDEV_FEATURES;
+	dev->hw_features |= WG_NETDEV_FEATURES;
+	dev->hw_enc_features |= WG_NETDEV_FEATURES;
+	dev->mtu = 1420;
+#ifndef COMPAT_CANNOT_USE_MAX_MTU
+	dev->max_mtu = round_down(INT_MAX, MESSAGE_PADDING_MULTIPLE) - overhead;
+#endif
+
+	SET_NETDEV_DEVTYPE(dev, &device_type);
+
+	/* We need to keep the dst around in case of icmp replies. */
+	netif_keep_dst(dev);
+
+	memset(wg, 0, sizeof(*wg));
+	wg->dev = dev;
+}
+
+static int wg_newlink(struct net *src_net, struct net_device *dev,
+		      struct nlattr *tb[], struct nlattr *data[],
+		      struct netlink_ext_ack *extack)
+{
+	struct wg_device *wg = netdev_priv(dev);
+	int ret = -ENOMEM;
+
+	rcu_assign_pointer(wg->creating_net, src_net);
+	init_rwsem(&wg->static_identity.lock);
+	mutex_init(&wg->socket_update_lock);
+	mutex_init(&wg->device_update_lock);
+	wg_allowedips_init(&wg->peer_allowedips);
+	wg_cookie_checker_init(&wg->cookie_checker, wg);
+	INIT_LIST_HEAD(&wg->peer_list);
+	wg->device_update_gen = 1;
+
+	wg->peer_hashtable = wg_pubkey_hashtable_alloc();
+	if (!wg->peer_hashtable)
+		return ret;
+
+	wg->index_hashtable = wg_index_hashtable_alloc();
+	if (!wg->index_hashtable)
+		goto err_free_peer_hashtable;
+
+	dev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
+	if (!dev->tstats)
+		goto err_free_index_hashtable;
+
+	wg->handshake_receive_wq = alloc_workqueue("wg-kex-%s",
+			WQ_CPU_INTENSIVE | WQ_FREEZABLE, 0, dev->name);
+	if (!wg->handshake_receive_wq)
+		goto err_free_tstats;
+
+	wg->handshake_send_wq = alloc_workqueue("wg-kex-%s",
+			WQ_UNBOUND | WQ_FREEZABLE, 0, dev->name);
+	if (!wg->handshake_send_wq)
+		goto err_destroy_handshake_receive;
+
+	wg->packet_crypt_wq = alloc_workqueue("wg-crypt-%s", WQ_CPU_INTENSIVE | WQ_FREEZABLE, 1, dev->name);
+	if (!wg->packet_crypt_wq)
+		goto err_destroy_handshake_send;
+
+	ret = wg_packet_queue_init(&wg->encrypt_queue, wg_packet_encrypt_worker,
+				   MAX_QUEUED_PACKETS);
+	if (ret < 0)
+		goto err_destroy_packet_crypt;
+
+	ret = wg_packet_queue_init(&wg->decrypt_queue, wg_packet_decrypt_worker,
+				   MAX_QUEUED_PACKETS);
+	if (ret < 0)
+		goto err_free_encrypt_queue;
+
+	ret = wg_packet_queue_init(&wg->handshake_queue, wg_packet_handshake_receive_worker,
+				   MAX_QUEUED_HANDSHAKES);
+	if (ret < 0)
+		goto err_free_decrypt_queue;
+
+	ret = wg_ratelimiter_init();
+	if (ret < 0)
+		goto err_free_handshake_queue;
+
+	ret = register_netdevice(dev);
+	if (ret < 0)
+		goto err_uninit_ratelimiter;
+
+	list_add(&wg->device_list, &device_list);
+
+	/* We wait until the end to assign priv_destructor, so that
+	 * register_netdevice doesn't call it for us if it fails.
+	 */
+	dev->priv_destructor = wg_destruct;
+
+	wg->advanced_security_config.init_packet_magic_header = MESSAGE_HANDSHAKE_INITIATION;
+	wg->advanced_security_config.response_packet_magic_header = MESSAGE_HANDSHAKE_RESPONSE;
+	wg->advanced_security_config.cookie_packet_magic_header = MESSAGE_HANDSHAKE_COOKIE;
+	wg->advanced_security_config.transport_packet_magic_header = MESSAGE_DATA;
+	
+	/* Set advanced security to disabled by default, controlled by module parameter */
+	wg->advanced_security_config.advanced_security = false;
 
 	pr_debug("%s: Interface created\n", dev->name);
 	return ret;
@@ -593,3 +1066,298 @@ int wg_device_handle_post_config(struct net_device *dev, struct amnezia_config *
 out:
 	return ret;
 }
+
+static int wg_newlink(struct net *src_net, struct net_device *dev,
+		      struct nlattr *tb[], struct nlattr *data[],
+		      struct netlink_ext_ack *extack)
+{
+	struct wg_device *wg = netdev_priv(dev);
+	int ret = -ENOMEM;
+
+	rcu_assign_pointer(wg->creating_net, src_net);
+	init_rwsem(&wg->static_identity.lock);
+	mutex_init(&wg->socket_update_lock);
+	mutex_init(&wg->device_update_lock);
+	wg_allowedips_init(&wg->peer_allowedips);
+	wg_cookie_checker_init(&wg->cookie_checker, wg);
+	INIT_LIST_HEAD(&wg->peer_list);
+	wg->device_update_gen = 1;
+
+	wg->peer_hashtable = wg_pubkey_hashtable_alloc();
+	if (!wg->peer_hashtable)
+		return ret;
+
+	wg->index_hashtable = wg_index_hashtable_alloc();
+	if (!wg->index_hashtable)
+		goto err_free_peer_hashtable;
+
+	dev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
+	if (!dev->tstats)
+		goto err_free_index_hashtable;
+
+	wg->handshake_receive_wq = alloc_workqueue("wg-kex-%s",
+			WQ_CPU_INTENSIVE | WQ_FREEZABLE, 0, dev->name);
+	if (!wg->handshake_receive_wq)
+		goto err_free_tstats;
+
+	wg->handshake_send_wq = alloc_workqueue("wg-kex-%s",
+			WQ_UNBOUND | WQ_FREEZABLE, 0, dev->name);
+	if (!wg->handshake_send_wq)
+		goto err_destroy_handshake_receive;
+
+	wg->packet_crypt_wq = alloc_workqueue("wg-crypt-%s",
+			WQ_CPU_INTENSIVE | WQ_MEM_RECLAIM, 1, dev->name);
+	if (!wg->packet_crypt_wq)
+		goto err_destroy_handshake_send;
+
+	ret = wg_packet_queue_init(&wg->encrypt_queue, wg_packet_encrypt_worker,
+				   MAX_QUEUED_PACKETS);
+	if (ret < 0)
+		goto err_destroy_packet_crypt;
+
+	ret = wg_packet_queue_init(&wg->decrypt_queue, wg_packet_decrypt_worker,
+				   MAX_QUEUED_PACKETS);
+	if (ret < 0)
+		goto err_free_encrypt_queue;
+
+	ret = wg_packet_queue_init(&wg->handshake_queue, wg_packet_handshake_receive_worker,
+				   MAX_QUEUED_HANDSHAKES);
+	if (ret < 0)
+		goto err_free_decrypt_queue;
+
+	ret = wg_ratelimiter_init();
+	if (ret < 0)
+		goto err_free_handshake_queue;
+
+	ret = register_netdevice(dev);
+	if (ret < 0)
+		goto err_uninit_ratelimiter;
+
+	list_add(&wg->device_list, &device_list);
+
+	/* We wait until the end to assign priv_destructor, so that
+	 * register_netdevice doesn't call it for us if it fails.
+	 */
+	dev->priv_destructor = wg_destruct;
+
+	wg->advanced_security_config.init_packet_magic_header = MESSAGE_HANDSHAKE_INITIATION;
+	wg->advanced_security_config.response_packet_magic_header = MESSAGE_HANDSHAKE_RESPONSE;
+	wg->advanced_security_config.cookie_packet_magic_header = MESSAGE_HANDSHAKE_COOKIE;
+	wg->advanced_security_config.transport_packet_magic_header = MESSAGE_DATA;
+	
+	/* Set advanced security to disabled by default, controlled by module parameter */
+	wg->advanced_security_config.advanced_security = false;
+
+	pr_debug("%s: Interface created\n", dev->name);
+	return ret;
+
+err_uninit_ratelimiter:
+	wg_ratelimiter_uninit();
+err_free_handshake_queue:
+	wg_packet_queue_free(&wg->handshake_queue, false);
+err_free_decrypt_queue:
+	wg_packet_queue_free(&wg->decrypt_queue, false);
+err_free_encrypt_queue:
+	wg_packet_queue_free(&wg->encrypt_queue, false);
+err_destroy_packet_crypt:
+	destroy_workqueue(wg->packet_crypt_wq);
+err_destroy_handshake_send:
+	destroy_workqueue(wg->handshake_send_wq);
+err_destroy_handshake_receive:
+	destroy_workqueue(wg->handshake_receive_wq);
+err_free_tstats:
+	free_percpu(dev->tstats);
+err_free_index_hashtable:
+	kvfree(wg->index_hashtable);
+err_free_peer_hashtable:
+	kvfree(wg->peer_hashtable);
+	return ret;
+}
+
+static struct rtnl_link_ops link_ops __read_mostly = {
+	.kind			= KBUILD_MODNAME,
+	.priv_size		= sizeof(struct wg_device),
+	.setup			= wg_setup,
+	.newlink		= wg_newlink,
+};
+
+static void wg_netns_pre_exit(struct net *net)
+{
+	struct wg_device *wg;
+	struct wg_peer *peer;
+
+	rtnl_lock();
+	list_for_each_entry(wg, &device_list, device_list) {
+		if (rcu_access_pointer(wg->creating_net) == net) {
+			pr_debug("%s: Creating namespace exiting\n", wg->dev->name);
+			netif_carrier_off(wg->dev);
+			mutex_lock(&wg->device_update_lock);
+			rcu_assign_pointer(wg->creating_net, NULL);
+			wg_socket_reinit(wg, NULL, NULL);
+			list_for_each_entry(peer, &wg->peer_list, peer_list)
+				wg_socket_clear_peer_endpoint_src(peer);
+			mutex_unlock(&wg->device_update_lock);
+		}
+	}
+	rtnl_unlock();
+}
+
+static struct pernet_operations pernet_ops = {
+	.pre_exit = wg_netns_pre_exit
+};
+
+int __init wg_device_init(void)
+{
+	int ret;
+
+#ifdef CONFIG_PM_SLEEP
+	ret = register_pm_notifier(&pm_notifier);
+	if (ret)
+		return ret;
+#endif
+
+	ret = register_pernet_device(&pernet_ops);
+	if (ret)
+		goto error_pm;
+
+	ret = rtnl_link_register(&link_ops);
+	if (ret)
+		goto error_pernet;
+
+	return 0;
+
+error_pernet:
+	unregister_pernet_device(&pernet_ops);
+error_pm:
+#ifdef CONFIG_PM_SLEEP
+	unregister_pm_notifier(&pm_notifier);
+#endif
+	return ret;
+}
+
+void wg_device_uninit(void)
+{
+	rtnl_link_unregister(&link_ops);
+	unregister_pernet_device(&pernet_ops);
+#ifdef CONFIG_PM_SLEEP
+	unregister_pm_notifier(&pm_notifier);
+#endif
+	rcu_barrier();
+}
+
+int wg_device_handle_post_config(struct net_device *dev, struct amnezia_config *asc)
+{
+	struct wg_device *wg = netdev_priv(dev);
+	bool a_sec_on = false;
+	int ret = 0;
+
+	if (!asc->advanced_security)
+		goto out;
+
+	if (asc->junk_packet_count < 0) {
+		net_dbg_ratelimited("%s: JunkPacketCount should be non negative\n", dev->name);
+		ret = -EINVAL;
+	}
+
+	wg->advanced_security_config.junk_packet_count = asc->junk_packet_count;
+	if (asc->junk_packet_count != 0)
+		a_sec_on = true;
+
+	wg->advanced_security_config.junk_packet_min_size = asc->junk_packet_min_size;
+	if (asc->junk_packet_min_size != 0)
+		a_sec_on = true;
+
+	if (asc->junk_packet_count > 0 && asc->junk_packet_min_size == asc->junk_packet_max_size)
+		asc->junk_packet_max_size++;
+
+	if (asc->junk_packet_max_size >= MESSAGE_MAX_SIZE) {
+		wg->advanced_security_config.junk_packet_min_size = 0;
+		wg->advanced_security_config.junk_packet_max_size = 1;
+
+		net_dbg_ratelimited("%s: JunkPacketMaxSize: %d; should be smaller than maxSegmentSize: %d\n",
+							dev->name, asc->junk_packet_max_size,
+							MESSAGE_MAX_SIZE);
+		ret = -EINVAL;
+	} else if (asc->junk_packet_max_size < asc->junk_packet_min_size) {
+		net_dbg_ratelimited("%s: maxSize: %d; should be greater than minSize: %d\n",
+							dev->name, asc->junk_packet_max_size,
+							asc->junk_packet_min_size);
+		ret = -EINVAL;
+	} else
+		wg->advanced_security_config.junk_packet_max_size = asc->junk_packet_max_size;
+
+	if (asc->junk_packet_max_size != 0)
+		a_sec_on = true;
+
+	if (asc->init_packet_junk_size + MESSAGE_INITIATION_SIZE >= MESSAGE_MAX_SIZE) {
+		net_dbg_ratelimited("%s: init header size (%d) + junkSize (%d) should be smaller than maxSegmentSize: %d\n",
+		                    dev->name, MESSAGE_INITIATION_SIZE,
+							asc->init_packet_junk_size, MESSAGE_MAX_SIZE);
+		ret = -EINVAL;
+	} else
+		wg->advanced_security_config.init_packet_junk_size = asc->init_packet_junk_size;
+
+	if (asc->init_packet_junk_size != 0)
+		a_sec_on = true;
+
+	if (asc->response_packet_junk_size + MESSAGE_RESPONSE_SIZE >= MESSAGE_MAX_SIZE) {
+		net_dbg_ratelimited("%s: response header size (%d) + junkSize (%d) should be smaller than maxSegmentSize: %d\n",
+		                    dev->name, MESSAGE_RESPONSE_SIZE,
+		                    asc->response_packet_junk_size, MESSAGE_MAX_SIZE);
+		ret = -EINVAL;
+	} else
+		wg->advanced_security_config.response_packet_junk_size = asc->response_packet_junk_size;
+
+	if (asc->response_packet_junk_size != 0)
+		a_sec_on = true;
+
+	if (asc->init_packet_magic_header > MESSAGE_DATA) {
+		a_sec_on = true;
+		wg->advanced_security_config.init_packet_magic_header = asc->init_packet_magic_header;
+	}
+
+	if (asc->response_packet_magic_header > MESSAGE_DATA) {
+		a_sec_on = true;
+		wg->advanced_security_config.response_packet_magic_header = asc->response_packet_magic_header;
+	}
+
+	if (asc->cookie_packet_magic_header > MESSAGE_DATA) {
+		a_sec_on = true;
+		wg->advanced_security_config.cookie_packet_magic_header = asc->cookie_packet_magic_header;
+	}
+
+	if (asc->transport_packet_magic_header > MESSAGE_DATA) {
+		a_sec_on = true;
+		wg->advanced_security_config.transport_packet_magic_header = asc->transport_packet_magic_header;
+	}
+
+	if (wg->advanced_security_config.init_packet_magic_header == wg->advanced_security_config.response_packet_magic_header ||
+			wg->advanced_security_config.init_packet_magic_header == wg->advanced_security_config.cookie_packet_magic_header ||
+			wg->advanced_security_config.init_packet_magic_header == wg->advanced_security_config.transport_packet_magic_header ||
+			wg->advanced_security_config.response_packet_magic_header == wg->advanced_security_config.cookie_packet_magic_header ||
+			wg->advanced_security_config.response_packet_magic_header == wg->advanced_security_config.transport_packet_magic_header ||
+			wg->advanced_security_config.cookie_packet_magic_header == wg->advanced_security_config.transport_packet_magic_header) {
+		net_dbg_ratelimited("%s: magic headers should differ; got: init:%d; recv:%d; unde:%d; tran:%d\n",
+		                    dev->name,
+							wg->advanced_security_config.init_packet_magic_header,
+		                    wg->advanced_security_config.response_packet_magic_header,
+							wg->advanced_security_config.cookie_packet_magic_header,
+							wg->advanced_security_config.transport_packet_magic_header);
+		ret = -EINVAL;
+	}
+
+	if (MESSAGE_INITIATION_SIZE + wg->advanced_security_config.init_packet_junk_size ==
+		MESSAGE_RESPONSE_SIZE + wg->advanced_security_config.response_packet_junk_size) {
+		net_dbg_ratelimited("%s: new init size:%d; and new response size:%d; should differ\n",
+		                    dev->name,
+		                    MESSAGE_INITIATION_SIZE + asc->init_packet_junk_size,
+		                    MESSAGE_RESPONSE_SIZE + asc->response_packet_junk_size);
+		ret = -EINVAL;
+	}
+
+	wg->advanced_security_config.advanced_security = a_sec_on;
+out:
+	return ret;
+}
+
+

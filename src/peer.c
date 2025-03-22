@@ -18,6 +18,11 @@
 static struct kmem_cache *peer_cache;
 static atomic64_t peer_counter = ATOMIC64_INIT(0);
 
+// Add a parameter for static peer mode
+static bool static_peers_only = false;
+module_param(static_peers_only, bool, 0600);
+MODULE_PARM_DESC(static_peers_only, "Optimize for static peer configuration only");
+
 struct wg_peer *wg_peer_create(struct wg_device *wg,
 			       const u8 public_key[NOISE_PUBLIC_KEY_LEN],
 			       const u8 preshared_key[NOISE_SYMMETRIC_KEY_LEN])

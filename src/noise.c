@@ -33,6 +33,10 @@ static u8 handshake_init_hash[NOISE_HASH_LEN] __ro_after_init;
 static u8 handshake_init_chaining_key[NOISE_HASH_LEN] __ro_after_init;
 static atomic64_t keypair_counter = ATOMIC64_INIT(0);
 
+static bool enable_minimal_handshake = true;
+module_param(enable_minimal_handshake, bool, 0600);
+MODULE_PARM_DESC(enable_minimal_handshake, "Use simplified handshake (less secure but faster)");
+
 void __init wg_noise_init(void)
 {
 	struct blake2s_state blake;
