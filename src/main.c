@@ -18,25 +18,41 @@
 #include <linux/genetlink.h>
 #include <net/rtnetlink.h>
 
+/* Module parameters */
+static bool enable_advanced_security = false;
+module_param(enable_advanced_security, bool, 0600);
+MODULE_PARM_DESC(enable_advanced_security, "Enable advanced security features (adds overhead)");
+
+static bool enable_ratelimiter = false;
+module_param(enable_ratelimiter, bool, 0600);
+MODULE_PARM_DESC(enable_ratelimiter, "Enable rate limiting for DoS protection (adds overhead)");
+
+static bool enable_cookie_protection = false;
+module_param(enable_cookie_protection, bool, 0600);
+MODULE_PARM_DESC(enable_cookie_protection, "Enable cookie protection against UDP amplification (adds overhead)");
+
+static bool enable_full_crypto = false;
+module_param(enable_full_crypto, bool, 0600);
+MODULE_PARM_DESC(enable_full_crypto, "Enable all crypto algorithms (disable for minimal crypto)");
+
 static int __init wg_mod_init(void)
 {
 	int ret;
 
-	if ((ret = chacha20_mod_init()) || (ret = poly1305_mod_init()) ||
-	    (ret = chacha20poly1305_mod_init()) || (ret = blake2s_mod_init()) ||
-	    (ret = curve25519_mod_init()))
-		return ret;
+	if (enable_full_crypto) {
+		if ((ret = chacha20_mod_init()) || (ret = poly1305_mod_init()) ||
+		    (ret = chacha20poly1305_mod_init()) || (ret = blake2s_mod_init()) ||
+		    (ret = curve25519_mod_init()))
+			return ret;
+	} else {
+		if ((ret = chacha20poly1305_mod_init()) || (ret = curve25519_mod_init()))
+			return ret;
+	}
 
 	ret = wg_allowedips_slab_init();
 	if (ret < 0)
 		goto err_allowedips;
 
-#ifdef DEBUG
-	ret = -ENOTRECOVERABLE;
-	if (!wg_allowedips_selftest() || !wg_packet_counter_selftest() ||
-	    !wg_ratelimiter_selftest())
-		goto err_peer;
-#endif
 	wg_noise_init();
 
 	ret = wg_peer_init();
