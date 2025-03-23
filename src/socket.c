@@ -17,87 +17,10 @@
 #include <net/udp_tunnel.h>
 #include <net/ipv6.h>
 
-static int send4(struct wg_device *wg, struct sk_buff *skb,
-		 struct endpoint *endpoint, u8 ds, struct dst_cache *cache)
-{
-	struct flowi4 fl = {
-		.saddr = endpoint->src4.s_addr,
-		.daddr = endpoint->addr4.sin_addr.s_addr,
-		.fl4_dport = endpoint->addr4.sin_port,
-		.flowi4_mark = wg->fwmark,
-		.flowi4_proto = IPPROTO_UDP
-	};
-	struct rtable *rt = NULL;
-	struct sock *sock;
-	int ret = 0;
-
-	skb_mark_not_on_list(skb);
-	skb->dev = wg->dev;
-	skb->mark = wg->fwmark;
-
-	rcu_read_lock_bh();
-	sock = rcu_dereference_bh(wg->sock4);
-
-	if (unlikely(!sock)) {
-		ret = -ENONET;
-		goto err;
-	}
-
-	fl.fl4_sport = inet_sk(sock)->inet_sport;
-
-	if (cache)
-		rt = dst_cache_get_ip4(cache, &fl.saddr);
-
-	if (!rt) {
-		security_sk_classify_flow(sock, flowi4_to_flowi(&fl));
-		if (unlikely(!inet_confirm_addr(sock_net(sock), NULL, 0,
-						fl.saddr, RT_SCOPE_HOST))) {
-			endpoint->src4.s_addr = 0;
-			endpoint->src_if4 = 0;
-			fl.saddr = 0;
-			if (cache)
-				dst_cache_reset(cache);
-		}
-		rt = ip_route_output_flow(sock_net(sock), &fl, sock);
-		if (unlikely(endpoint->src_if4 && ((IS_ERR(rt) &&
-			     PTR_ERR(rt) == -EINVAL) || (!IS_ERR(rt) &&
-			     rt->dst.dev->ifindex != endpoint->src_if4)))) {
-			endpoint->src4.s_addr = 0;
-			endpoint->src_if4 = 0;
-			fl.saddr = 0;
-			if (cache)
-				dst_cache_reset(cache);
-			if (!IS_ERR(rt))
-				ip_rt_put(rt);
-			rt = ip_route_output_flow(sock_net(sock), &fl, sock);
-		}
-		if (IS_ERR(rt)) {
-			ret = PTR_ERR(rt);
-			net_dbg_ratelimited("%s: No route to %pISpfsc, error %d\n",
-					    wg->dev->name, &endpoint->addr, ret);
-			goto err;
-		}
-		if (cache)
-			dst_cache_set_ip4(cache, &rt->dst, fl.saddr);
-	}
-
-	skb->ignore_df = 1;
-	udp_tunnel_xmit_skb(rt, sock, skb, fl.saddr, fl.daddr, ds,
-			    ip4_dst_hoplimit(&rt->dst), 0, fl.fl4_sport,
-			    fl.fl4_dport, false, false);
-	goto out;
-
-err:
-	kfree_skb(skb);
-out:
-	rcu_read_unlock_bh();
-	return ret;
-}
-
+#ifdef CONFIG_AMNEZIAWG_IPV6
 static int send6(struct wg_device *wg, struct sk_buff *skb,
 		 struct endpoint *endpoint, u8 ds, struct dst_cache *cache)
 {
-#if IS_ENABLED(CONFIG_IPV6)
 	struct flowi6 fl = {
 		.saddr = endpoint->src6,
 		.daddr = endpoint->addr6.sin6_addr,
@@ -159,11 +82,8 @@ err:
 out:
 	rcu_read_unlock_bh();
 	return ret;
-#else
-	kfree_skb(skb);
-	return -EAFNOSUPPORT;
-#endif
 }
+#endif
 
 int wg_socket_send_skb_to_peer(struct wg_peer *peer, struct sk_buff *skb, u8 ds)
 {
@@ -174,9 +94,11 @@ int wg_socket_send_skb_to_peer(struct wg_peer *peer, struct sk_buff *skb, u8 ds)
 	if (peer->endpoint.addr.sa_family == AF_INET)
 		ret = send4(peer->device, skb, &peer->endpoint, ds,
 			    &peer->endpoint_cache);
+#ifdef CONFIG_AMNEZIAWG_IPV6
 	else if (peer->endpoint.addr.sa_family == AF_INET6)
 		ret = send6(peer->device, skb, &peer->endpoint, ds,
 			    &peer->endpoint_cache);
+#endif
 	else
 		dev_kfree_skb(skb);
 	if (likely(!ret))
@@ -235,8 +157,10 @@ int wg_socket_send_buffer_as_reply_to_skb(struct wg_device *wg,
 
 	if (endpoint.addr.sa_family == AF_INET)
 		ret = send4(wg, skb, &endpoint, 0, NULL);
+#ifdef CONFIG_AMNEZIAWG_IPV6
 	else if (endpoint.addr.sa_family == AF_INET6)
 		ret = send6(wg, skb, &endpoint, 0, NULL);
+#endif
 	/* No other possibilities if the endpoint is valid, which it is,
 	 * as we checked above.
 	 */
@@ -374,7 +298,7 @@ int wg_socket_init(struct wg_device *wg, u16 port)
 		.local_udp_port = htons(port),
 		.use_udp_checksums = true
 	};
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef CONFIG_AMNEZIAWG_IPV6
 	int retries = 0;
 	struct udp_port_cfg port6 = {
 		.family = AF_INET6,
@@ -392,7 +316,7 @@ int wg_socket_init(struct wg_device *wg, u16 port)
 	if (unlikely(!net))
 		return -ENONET;
 
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef CONFIG_AMNEZIAWG_IPV6
 retry:
 #endif
 
@@ -404,7 +328,7 @@ retry:
 	set_sock_opts(new4);
 	setup_udp_tunnel_sock(net, new4, &cfg);
 
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef CONFIG_AMNEZIAWG_IPV6
 	if (ipv6_mod_enabled()) {
 		port6.local_udp_port = inet_sk(new4->sk)->inet_sport;
 		ret = udp_sock_create(net, &port6, &new6);

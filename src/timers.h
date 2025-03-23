@@ -28,4 +28,11 @@ static inline bool wg_birthdate_has_expired(u64 birthday_nanoseconds,
 		<= (s64)ktime_get_coarse_boottime_ns();
 }
 
+// Increase keepalive interval
+#define KEEPALIVE_TIMEOUT 30
+
+// Make persistent keepalives optional
+static bool enable_persistent_keepalive = false;
+module_param(enable_persistent_keepalive, bool, 0600);
+
 #endif /* _WG_TIMERS_H */

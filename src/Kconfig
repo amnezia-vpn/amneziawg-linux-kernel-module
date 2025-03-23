@@ -31,3 +31,11 @@ config AMNEZIAWG_DEBUG
 	  only useful for debugging.
 
 	  Say N here unless you know what you're doing.
+
+config AMNEZIAWG_IPV6
+	bool "IPv6 support for AmneziaWG"
+	depends on AMNEZIAWG && IPV6
+	default y
+	help
+	  This enables IPv6 support in AmneziaWG.
+	  If you don't need IPv6, disable for a smaller module.

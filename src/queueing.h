@@ -214,4 +214,7 @@ static inline void wg_queue_enqueue_per_peer_rx(struct sk_buff *skb, enum packet
 bool wg_packet_counter_selftest(void);
 #endif
 
+#define MAX_QUEUED_PACKETS 256
+#define MAX_QUEUED_HANDSHAKES 64
+
 #endif /* _WG_QUEUEING_H */
