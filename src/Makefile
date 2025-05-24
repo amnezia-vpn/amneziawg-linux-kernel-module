@@ -59,7 +59,7 @@ NEEDED_SOURCES := $(addprefix $(GENERATED_SOURCES_DIR)/,main.c uapi/wireguard.h 
 
 apply-patches: $(NEEDED_SOURCES) $(GENERATED_SOURCES_DIR)/.patches.stamp
 
-$(GENERATED_SOURCES_DIR)/.patches.stamp: $(sort $(wildcard $(PWD)/patches/*.patch))
+$(GENERATED_SOURCES_DIR)/.patches.stamp: $(sort $(wildcard $(PWD)/patches/*.patch)) | $(NEEDED_SOURCES)
 	CWD=$$(pwd); \
 	cd $(GENERATED_SOURCES_DIR); \
 	for patch in $^; do \
