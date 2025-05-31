@@ -114,6 +114,7 @@ and link resulting tree to `kernel` symlink:
 - S1 — S1 ≤ 1132* (1280* - 148 = 1132); S1 + 56 ≠ S2; recommended range is from 15 to 150 inclusive
 - S2 — S2 ≤ 1188* (1280* - 92 = 1188); recommended range is from 15 to 150 inclusive
 - H1/H2/H3/H4 — must be unique among each other; recommended range is from 5 to 2147483647 inclusive
+
 *Assuming a basic internet connection with an MTU value of 1280.
 
 ## Troubleshooting
