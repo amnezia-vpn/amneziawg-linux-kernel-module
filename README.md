@@ -106,14 +106,15 @@ and link resulting tree to `kernel` symlink:
 ## Configuration
 
 > [!IMPORTANT]
-> All parameters should be the same between Client and Server, except Jc - it can vary.
+> All parameters must be the same between Client and Server, except for Jc, Jmin, and Jmax - these may vary.
 
-- Jc — 1 ≤ Jc ≤ 128; recommended range is from 3 to 10 inclusive
-- Jmin — Jmin < Jmax; recommended value is 50
-- Jmax — Jmin < Jmax ≤ 1280; recommended value is 1000
-- S1 — S1 < 1280; S1 + 56 ≠ S2; recommended range is from 15 to 150 inclusive
-- S2 — S2 < 1280; recommended range is from 15 to 150 inclusive
+- Jc — 1 ≤ Jc ≤ 128; recommended range is from 4 to 12 inclusive
+- Jmin — Jmin < 1280* < Jmax; recommended value is 8
+- Jmax — Jmin < Jmax ≤ 1280; recommended value is 80
+- S1 — S1 < 1133* (1280 - 148 = 1132); S1 + 56 ≠ S2; recommended range is from 15 to 150 inclusive
+- S2 — S2 < 1189* (1280 - 92 = 1188); recommended range is from 15 to 150 inclusive
 - H1/H2/H3/H4 — must be unique among each other; recommended range is from 5 to 2147483647 inclusive
+*Assuming a basic internet connection with an MTU value of 1280.
 
 ## Troubleshooting
 
