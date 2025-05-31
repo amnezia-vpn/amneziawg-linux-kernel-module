@@ -109,7 +109,7 @@ and link resulting tree to `kernel` symlink:
 > All parameters must be the same between Client and Server, except for Jc, Jmin, and Jmax - these may vary.
 
 - Jc — 1 ≤ Jc ≤ 128; recommended range is from 4 to 12 inclusive
-- Jmin — Jmin < 1280* < Jmax; recommended value is 8
+- Jmin — Jmax > Jmin < 1280*; recommended value is 8
 - Jmax — Jmin < Jmax ≤ 1280*; recommended value is 80
 - S1 — S1 ≤ 1132* (1280* - 148 = 1132); S1 + 56 ≠ S2; recommended range is from 15 to 150 inclusive
 - S2 — S2 ≤ 1188* (1280* - 92 = 1188); recommended range is from 15 to 150 inclusive
