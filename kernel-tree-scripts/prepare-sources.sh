@@ -90,6 +90,7 @@ else
   [ -f "${HOME}/.rpmmacros.orig" ] && mv "${HOME}/.rpmmacros.orig" "${HOME}/.rpmmacros"
   cd ../BUILD || exit 255
   cd_first
+  cd_first kernel
   cd_first linux
 fi
 
