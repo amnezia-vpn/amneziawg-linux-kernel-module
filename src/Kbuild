@@ -17,4 +17,12 @@ ifndef AWG_MODERN_KERNEL
     include $(src)/compat/Kbuild.include
 endif
 
-obj-$(if $(KBUILD_EXTMOD),m,$(CONFIG_AMNEZIAWG)) := amneziawg.o
+obj-$(CONFIG_AMNEZIAWG) += amneziawg.o
+amneziawg-y += main.o
+amneziawg-y += noise.o
+amneziawg-y += device.o
+amneziawg-y += peer.o
+amneziawg-y += receive.o
+amneziawg-y += send.o
+amneziawg-$(CONFIG_AMNEZIAWG_RATELIMITER) += ratelimiter.o
+amneziawg-$(CONFIG_AMNEZIAWG_COOKIES) += cookie.o

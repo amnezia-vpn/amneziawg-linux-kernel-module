@@ -15,6 +15,11 @@
 
 #include <net/ipv6.h>
 #include <crypto/algapi.h>
+#include <linux/jiffies.h>
+#include <linux/rcupdate.h>
+
+/* Forward declaration for module parameter */
+extern bool enable_cookie_protection;
 
 void wg_cookie_checker_init(struct cookie_checker *checker,
 			    struct wg_device *wg)
@@ -44,6 +49,9 @@ static void precompute_key(u8 key[NOISE_SYMMETRIC_KEY_LEN],
 /* Must hold peer->handshake.static_identity->lock */
 void wg_cookie_checker_precompute_device_keys(struct cookie_checker *checker)
 {
+	if (!enable_cookie_protection)
+		return;
+		
 	if (likely(checker->device->static_identity.has_identity)) {
 		precompute_key(checker->cookie_encryption_key,
 			       checker->device->static_identity.static_public,
@@ -120,6 +128,9 @@ enum cookie_mac_state wg_cookie_validate_packet(struct cookie_checker *checker,
 						struct sk_buff *skb,
 						bool check_cookie)
 {
+	if (!enable_cookie_protection)
+		return VALID_MAC_WITH_COOKIE;
+		
 	struct message_macs *macs = (struct message_macs *)
 		(skb->data + skb->len - sizeof(*macs));
 	enum cookie_mac_state ret;

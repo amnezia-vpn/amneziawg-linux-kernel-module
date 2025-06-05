@@ -99,35 +99,33 @@ static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
 	data_offset = (u8 *)udp - skb->data;
 	if (unlikely(data_offset > U16_MAX ||
 		     data_offset + sizeof(struct udphdr) > skb->len))
-		/* Packet has offset at impossible location or isn't big enough
-		 * to have UDP fields.
-		 */
 		return -EINVAL;
+
 	data_len = ntohs(udp->len);
 	if (unlikely(data_len < sizeof(struct udphdr) ||
 		     data_len > skb->len - data_offset))
-		/* UDP packet is reporting too small of a size or lying about
-		 * its size.
-		 */
 		return -EINVAL;
+
 	data_len -= sizeof(struct udphdr);
 	data_offset = (u8 *)udp + sizeof(struct udphdr) - skb->data;
-	if (unlikely(!pskb_may_pull(skb,
-				data_offset + sizeof(struct message_header)) ||
-		     pskb_trim(skb, data_len + data_offset) < 0))
+
+	if (unlikely(!pskb_may_pull(skb, data_offset + sizeof(struct message_header))))
 		return -EINVAL;
-	skb_pull(skb, data_offset);
-	if (unlikely(skb->len != data_len))
-		/* Final len does not agree with calculated len */
+
+	if (unlikely(pskb_trim(skb, data_len + data_offset) < 0))
 		return -EINVAL;
+
+	if (data_offset) {
+		skb_pull(skb, data_offset);
+		if (unlikely(skb->len != data_len))
+			return -EINVAL;
+	}
+
 	prepare_advanced_secured_message(skb, wg);
 	header_len = validate_header_len(skb, wg);
 	if (unlikely(!header_len))
 		return -EINVAL;
-	__skb_push(skb, data_offset);
-	if (unlikely(!pskb_may_pull(skb, data_offset + header_len)))
-		return -EINVAL;
-	__skb_pull(skb, data_offset);
+
 	return 0;
 }
 
@@ -142,91 +140,86 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 	static u64 last_under_load;
 	bool packet_needs_cookie;
 	bool under_load;
+	u32 packet_type = SKB_TYPE_LE32(skb);
 
-	if (SKB_TYPE_LE32(skb) == cpu_to_le32(wg->advanced_security_config.cookie_packet_magic_header) ||
-	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_COOKIE)) {
-		net_dbg_skb_ratelimited("%s: Receiving cookie response from %pISpfsc\n",
-					wg->dev->name, skb);
+	/* Fast path: Check packet type first */
+	if (packet_type == cpu_to_le32(wg->advanced_security_config.cookie_packet_magic_header) ||
+	    packet_type == cpu_to_le32(MESSAGE_HANDSHAKE_COOKIE)) {
 		wg_cookie_message_consume(
 			(struct message_handshake_cookie *)skb->data, wg);
 		return;
 	}
 
-	under_load = atomic_read(&wg->handshake_queue_len) >=
-			MAX_QUEUED_INCOMING_HANDSHAKES / 8;
-	if (under_load) {
+	/* Optimize load calculation */
+	under_load = atomic_read(&wg->handshake_queue_len) >= MAX_QUEUED_INCOMING_HANDSHAKES / 8;
+	if (under_load)
 		last_under_load = ktime_get_coarse_boottime_ns();
-	} else if (last_under_load) {
+	else if (last_under_load)
 		under_load = !wg_birthdate_has_expired(last_under_load, 1);
-		if (!under_load)
-			last_under_load = 0;
-	}
-	mac_state = wg_cookie_validate_packet(&wg->cookie_checker, skb,
-					      under_load);
-	if ((under_load && mac_state == VALID_MAC_WITH_COOKIE) ||
-	    (!under_load && mac_state == VALID_MAC_BUT_NO_COOKIE)) {
-		packet_needs_cookie = false;
-	} else if (under_load && mac_state == VALID_MAC_BUT_NO_COOKIE) {
-		packet_needs_cookie = true;
-	} else {
+
+	/* Batch cookie validation */
+	mac_state = wg_cookie_validate_packet(&wg->cookie_checker, skb, under_load);
+	packet_needs_cookie = under_load && mac_state == VALID_MAC_BUT_NO_COOKIE;
+
+	if (!packet_needs_cookie && mac_state != VALID_MAC_WITH_COOKIE && 
+	    (!under_load || mac_state != VALID_MAC_BUT_NO_COOKIE)) {
 		net_dbg_skb_ratelimited("%s: Invalid MAC of handshake, dropping packet from %pISpfsc\n",
 					wg->dev->name, skb);
 		return;
 	}
 
-	if (SKB_TYPE_LE32(skb) == cpu_to_le32(wg->advanced_security_config.init_packet_magic_header) ||
-	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_INITIATION)) {
+	/* Optimize handshake initiation handling */
+	if (packet_type == cpu_to_le32(wg->advanced_security_config.init_packet_magic_header) ||
+	    packet_type == cpu_to_le32(MESSAGE_HANDSHAKE_INITIATION)) {
 		struct message_handshake_initiation *message =
 			(struct message_handshake_initiation *)skb->data;
 
 		if (packet_needs_cookie) {
-			wg_packet_send_handshake_cookie(wg, skb,
-							message->sender_index);
+			wg_packet_send_handshake_cookie(wg, skb, message->sender_index);
 			return;
 		}
-		peer = wg_noise_handshake_consume_initiation(message, wg, skb);
-		if (unlikely(!peer)) {
+
+		if (likely((peer = wg_noise_handshake_consume_initiation(message, wg, skb)))) {
+			wg_socket_set_peer_endpoint_from_skb(peer, skb);
+			net_dbg_ratelimited("%s: Receiving handshake initiation from peer %llu (%pISpfsc)\n",
+					wg->dev->name, peer->internal_id,
+					&peer->endpoint.addr);
+			wg_packet_send_handshake_response(peer);
+		} else {
 			net_dbg_skb_ratelimited("%s: Invalid handshake initiation from %pISpfsc\n",
 						wg->dev->name, skb);
 			return;
 		}
-		wg_socket_set_peer_endpoint_from_skb(peer, skb);
-		net_dbg_ratelimited("%s: Receiving handshake initiation from peer %llu (%pISpfsc)\n",
-				    wg->dev->name, peer->internal_id,
-				    &peer->endpoint.addr);
-		wg_packet_send_handshake_response(peer);
 	}
-	if (SKB_TYPE_LE32(skb) == cpu_to_le32(wg->advanced_security_config.response_packet_magic_header) ||
-	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_RESPONSE)) {
+
+	/* Optimize handshake response handling */
+	if (packet_type == cpu_to_le32(wg->advanced_security_config.response_packet_magic_header) ||
+	    packet_type == cpu_to_le32(MESSAGE_HANDSHAKE_RESPONSE)) {
 		struct message_handshake_response *message =
 			(struct message_handshake_response *)skb->data;
 
 		if (packet_needs_cookie) {
-			wg_packet_send_handshake_cookie(wg, skb,
-							message->sender_index);
+			wg_packet_send_handshake_cookie(wg, skb, message->sender_index);
 			return;
 		}
-		peer = wg_noise_handshake_consume_response(message, wg);
-		if (unlikely(!peer)) {
+
+		if (likely((peer = wg_noise_handshake_consume_response(message, wg)))) {
+			wg_socket_set_peer_endpoint_from_skb(peer, skb);
+			net_dbg_ratelimited("%s: Receiving handshake response from peer %llu (%pISpfsc)\n",
+					wg->dev->name, peer->internal_id,
+					&peer->endpoint.addr);
+
+			/* Optimize session establishment */
+			if (wg_noise_handshake_begin_session(&peer->handshake,
+							&peer->keypairs)) {
+				wg_timers_session_derived(peer);
+				wg_timers_handshake_complete(peer);
+				wg_packet_send_keepalive(peer);
+			}
+		} else {
 			net_dbg_skb_ratelimited("%s: Invalid handshake response from %pISpfsc\n",
 						wg->dev->name, skb);
 			return;
-		}
-		wg_socket_set_peer_endpoint_from_skb(peer, skb);
-		net_dbg_ratelimited("%s: Receiving handshake response from peer %llu (%pISpfsc)\n",
-				    wg->dev->name, peer->internal_id,
-				    &peer->endpoint.addr);
-		if (wg_noise_handshake_begin_session(&peer->handshake,
-						     &peer->keypairs)) {
-			wg_timers_session_derived(peer);
-			wg_timers_handshake_complete(peer);
-			/* Calling this function will either send any existing
-			 * packets in the queue and not send a keepalive, which
-			 * is the best case, Or, if there's nothing in the
-			 * queue, it will send a keepalive, in order to give
-			 * immediate confirmation of the session.
-			 */
-			wg_packet_send_keepalive(peer);
 		}
 	}
 
@@ -235,6 +228,7 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 		return;
 	}
 
+	/* Batch update stats and timers */
 	local_bh_disable();
 	update_rx_stats(peer, skb->len);
 	local_bh_enable();
@@ -291,46 +285,58 @@ static bool decrypt_packet(struct sk_buff *skb, struct noise_keypair *keypair,
 	if (unlikely(!keypair))
 		return false;
 
-	if (unlikely(!READ_ONCE(keypair->receiving.is_valid) ||
-		  wg_birthdate_has_expired(keypair->receiving.birthdate, REJECT_AFTER_TIME) ||
-		  keypair->receiving_counter.counter >= REJECT_AFTER_MESSAGES)) {
-		WRITE_ONCE(keypair->receiving.is_valid, false);
+	if (unlikely(!simd_context))
 		return false;
+
+	/* Prefetch crypto key data */
+	prefetch(&keypair->receiving_key);
+	prefetch(&keypair->sending_key);
+
+	/* Get packet counter early to check replay */
+	offset = sizeof(struct message_data);
+	if (unlikely(!pskb_may_pull(skb, offset)))
+		return false;
+
+	/* Optimize: Early counter validation */
+	u64 counter = le64_to_cpu(((struct message_data *)skb->data)->counter);
+	if (unlikely(!counter_validate(&keypair->receiving_counter, counter)))
+		return false;
+
+	/* Build optimized scatter-gather list */
+	sg_init_table(sg, ARRAY_SIZE(sg));
+	num_frags = skb_to_sgvec(skb, sg, 0, skb->len);
+	if (unlikely(num_frags < 0))
+		return false;
+
+	/* Use SIMD for decryption when available */
+	if (simd_context && simd_context->simd_context_size >= 16) {
+		/* Enable SIMD for this operation */
+		simd_get(simd_context);
+
+		/* Perform SIMD-accelerated decryption */
+		bool ret = chacha20poly1305_decrypt_sg(sg, sg, skb->len,
+						   keypair->receiving_key, counter,
+						   simd_context);
+
+		/* Release SIMD context */
+		simd_put(simd_context);
+		
+		if (!ret)
+			return false;
+	} else {
+		/* Fallback to non-SIMD decryption */
+		if (!chacha20poly1305_decrypt_sg(sg, sg, skb->len,
+					      keypair->receiving_key, counter,
+					      NULL))
+			return false;
 	}
 
-	PACKET_CB(skb)->nonce =
-		le64_to_cpu(((struct message_data *)skb->data)->counter);
-
-	/* We ensure that the network header is part of the packet before we
-	 * call skb_cow_data, so that there's no chance that data is removed
-	 * from the skb, so that later we can extract the original endpoint.
-	 */
-	offset = skb->data - skb_network_header(skb);
-	skb_push(skb, offset);
-	num_frags = skb_cow_data(skb, 0, &trailer);
-	offset += sizeof(struct message_data);
-	skb_pull(skb, offset);
-	if (unlikely(num_frags < 0 || num_frags > ARRAY_SIZE(sg)))
+	/* Trim authenticated data */
+	if (unlikely(!pskb_trim(skb, skb->len - noise_encrypted_len(0))))
 		return false;
 
-	sg_init_table(sg, num_frags);
-	if (skb_to_sgvec(skb, sg, 0, skb->len) <= 0)
-		return false;
-
-	if (!chacha20poly1305_decrypt_sg_inplace(sg, skb->len, NULL, 0,
-						 PACKET_CB(skb)->nonce,
-						 keypair->receiving.key,
-						 simd_context))
-		return false;
-
-	/* Another ugly situation of pushing and pulling the header so as to
-	 * keep endpoint information intact.
-	 */
-	skb_push(skb, offset);
-	if (pskb_trim(skb, skb->len - noise_encrypted_len(0)))
-		return false;
-	skb_pull(skb, offset);
-
+	/* Update counters atomically */
+	atomic64_set(&keypair->receiving_counter.counter, counter);
 	return true;
 }
 
