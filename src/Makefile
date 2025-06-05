@@ -37,7 +37,7 @@ endef
 export MODERN_KERNEL_CHECK_COMMAND
 
 ifeq ($(shell $(MODERN_KERNEL_CHECK_COMMAND)),Y)
-define MODERN_KERNEL_SOURCES_NOT_FOUND_ERROR
+define KERNEL_SRC_ABSENT_ERR
 
 You're running a modern Linux Kernel (version $(KERNELRELEASE)).
 
@@ -48,7 +48,7 @@ by yourself and make a symlink to them into this directory:
 
 After that please run make script again
 endef
-export MODERN_KERNEL_SOURCES_NOT_FOUND_ERROR
+export KERNEL_SRC_ABSENT_ERR
 
 GENERATED_SOURCES_DIR := $(PWD)/generated
 TARGET_BUILD_DIR := $(GENERATED_SOURCES_DIR)
@@ -78,7 +78,7 @@ $(GENERATED_SOURCES_DIR)/%: $(WG_SOURCE_DIR)/%
 	@install -d $(@D) && install -m 0644 $^ $@
 
 $(KERNEL_SOURCE_DIR)/%:
-	$(error $(MODERN_KERNEL_SOURCES_NOT_FOUND_ERROR))
+	$(error $(KERNEL_SRC_ABSENT_ERR))
 else
 TARGET_BUILD_DIR := $(PWD)
 
