@@ -42,7 +42,7 @@ define MODERN_KERNEL_SOURCES_NOT_FOUND_ERROR
 You're running a modern Linux Kernel (version $(KERNELRELEASE)).
 
 In order to build AmneziaWG kernel module for this kernel you must obtain sources of your kernel
-by yourself and make a symlink to them into this directory:
+by yourself and make a symlink to them into /var/lib/dkms/(amnezia folder)/build and /usr/src/(amnezia folder)/build directories:
 
     ln -s <path to kernel sources> kernel
 
