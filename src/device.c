@@ -3,6 +3,7 @@
  * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
 
+#include "junk.h"
 #include "queueing.h"
 #include "socket.h"
 #include "timers.h"
@@ -235,6 +236,10 @@ static const struct net_device_ops netdev_ops = {
 static void wg_destruct(struct net_device *dev)
 {
 	struct wg_device *wg = netdev_priv(dev);
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i)
+		jp_spec_free(&wg->ispecs[i]);
 
 	rtnl_lock();
 	list_del(&wg->device_list);
@@ -501,6 +506,8 @@ int wg_device_handle_post_config(struct net_device *dev, struct amnezia_config *
 	struct wg_device *wg = netdev_priv(dev);
 	bool a_sec_on = false;
 	int ret = 0;
+	int err;
+	int i, j;
 
 	if (!asc->advanced_security)
 		goto out;
@@ -577,6 +584,15 @@ int wg_device_handle_post_config(struct net_device *dev, struct amnezia_config *
 			}
 			a_sec_on = true;
 		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i) {
+		err = jp_spec_setup(&wg->ispecs[i]);
+		if (err) {
+			net_dbg_ratelimited("%s: I%d-packet invalid format\n", wg->dev->name, i + 1);
+			ret = err;
+		}
+		a_sec_on = true;
 	}
 
 	wg->advanced_security_config.advanced_security = a_sec_on;

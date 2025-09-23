@@ -4,6 +4,7 @@
  */
 
 #include "compat/compat.h"
+#include "junk.h"
 #include "magic_header.h"
 #include "queueing.h"
 #include "timers.h"
@@ -35,6 +36,8 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 	void *buffer;
 	u8 ds;
 	u16 junk_packet_count, junk_packet_size;
+	int i;
+	struct jp_spec* spec;
 
 	if (!wg_birthdate_has_expired(atomic64_read(&peer->last_sent_handshake),
 				      REKEY_TIMEOUT))
@@ -44,6 +47,19 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 	net_dbg_ratelimited("%s: Sending handshake initiation to peer %llu (%pISpfsc)\n",
 			    peer->device->dev->name, peer->internal_id,
 			    &peer->endpoint.addr);
+
+	atomic_set(&peer->jp_packet_counter, get_random_u32());
+	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i)
+	{
+		spec = &wg->ispecs[i];
+		if (spec->pkt_size > 0) {
+			mutex_lock(&spec->lock);
+			jp_spec_applymods(spec, peer);
+			wg_socket_send_buffer_to_peer(peer, spec->pkt, spec->pkt_size, 0, 0);
+			atomic_inc(&peer->jp_packet_counter);
+			mutex_unlock(&spec->lock);
+		}
+	}
 
 	if (wg->advanced_security_config.advanced_security && peer->advanced_security) {
 		junk_packet_count = wg->advanced_security_config.junk_packet_count;
