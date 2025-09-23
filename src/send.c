@@ -23,12 +23,6 @@
 #include <net/udp.h>
 #include <net/sock.h>
 
-static u32 wg_get_random_u32_inclusive(u32 floor, u32 ceil)
-{
-	u32 diff = ceil - floor + 1;
-	return floor + (get_random_u32() % diff);
-}
-
 static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 {
 	struct message_handshake_initiation packet;
@@ -60,15 +54,17 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 			mutex_unlock(&spec->lock);
 		}
 	}
+	
+	if (wg->jc && wg->jmax) {
+		net_dbg_ratelimited("%s: Sending dummy junk packets to %llu (%pISpfsc)\n",
+			    peer->device->dev->name, peer->internal_id,
+			    &peer->endpoint.addr);
 
-	if (wg->advanced_security_config.advanced_security && peer->advanced_security) {
-		junk_packet_count = wg->advanced_security_config.junk_packet_count;
-		buffer = kzalloc(wg->advanced_security_config.junk_packet_max_size, GFP_KERNEL);
+		junk_packet_count = wg->jc;
+		buffer = kzalloc(wg->jmax, GFP_KERNEL);
 
 		while (junk_packet_count-- > 0) {
-			junk_packet_size = (u16) wg_get_random_u32_inclusive(
-					wg->advanced_security_config.junk_packet_min_size,
-					wg->advanced_security_config.junk_packet_max_size);
+			junk_packet_size = (u16) get_random_u32_inclusive(wg->jmin, wg->jmax);
 
 			get_random_bytes(buffer, junk_packet_size);
 			get_random_bytes(&ds, 1);

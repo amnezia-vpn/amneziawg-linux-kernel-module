@@ -41,7 +41,6 @@ struct wg_peer *wg_peer_create(struct wg_device *wg,
 				public_key, preshared_key, peer);
 	peer->internal_id = atomic64_inc_return(&peer_counter);
 	peer->serial_work_cpu = nr_cpumask_bits;
-	peer->advanced_security = wg->advanced_security_config.advanced_security;
 	wg_cookie_init(&peer->latest_cookie);
 	wg_timers_init(peer);
 	wg_cookie_checker_precompute_peer_keys(peer);

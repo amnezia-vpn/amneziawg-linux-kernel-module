@@ -435,12 +435,9 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 		    nla_put_u32(skb, WGDEVICE_A_FWMARK, wg->fwmark) ||
 		    nla_put_u32(skb, WGDEVICE_A_IFINDEX, wg->dev->ifindex) ||
 		    nla_put_string(skb, WGDEVICE_A_IFNAME, wg->dev->name) ||
-		    nla_put_u16(skb, WGDEVICE_A_JC,
-					    wg->advanced_security_config.junk_packet_count) ||
-		    nla_put_u16(skb, WGDEVICE_A_JMIN,
-					    wg->advanced_security_config.junk_packet_min_size) ||
-		    nla_put_u16(skb, WGDEVICE_A_JMAX,
-					    wg->advanced_security_config.junk_packet_max_size) ||
+		    nla_put_u16(skb, WGDEVICE_A_JC, wg->jc) ||
+		    nla_put_u16(skb, WGDEVICE_A_JMIN, wg->jmin) ||
+		    nla_put_u16(skb, WGDEVICE_A_JMAX, wg->jmax) ||
 		    nla_put_u16(skb, WGDEVICE_A_S1, wg->junk_size[MSGIDX_HANDSHAKE_INIT]) ||
 		    nla_put_u16(skb, WGDEVICE_A_S2,wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]) ||
 		    (mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_INIT], buf, sizeof(buf)) &&
@@ -710,7 +707,7 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 	}
 
 	if (flags & WGPEER_F_HAS_ADVANCED_SECURITY) {
-		peer->advanced_security = wg->advanced_security_config.advanced_security &&
+		peer->advanced_security = wg->advanced_security &&
 				nla_get_flag(attrs[WGPEER_A_ADVANCED_SECURITY]);
 	}
 
@@ -728,7 +725,6 @@ out:
 static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 {
 	struct wg_device *wg = lookup_interface(info->attrs, skb);
-	struct amnezia_config *asc = kzalloc(sizeof(*asc), GFP_KERNEL);
 	u32 flags = 0;
 	int ret;
 	char *str;
@@ -775,32 +771,32 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[WGDEVICE_A_JC]) {
-		asc->advanced_security = true;
-		asc->junk_packet_count = nla_get_u16(info->attrs[WGDEVICE_A_JC]);
+		wg->advanced_security = true;
+		wg->jc = nla_get_u16(info->attrs[WGDEVICE_A_JC]);
 	}
 
 	if (info->attrs[WGDEVICE_A_JMIN]) {
-		asc->advanced_security = true;
-		asc->junk_packet_min_size = nla_get_u16(info->attrs[WGDEVICE_A_JMIN]);
+		wg->advanced_security = true;
+		wg->jmin = nla_get_u16(info->attrs[WGDEVICE_A_JMIN]);
 	}
 
 	if (info->attrs[WGDEVICE_A_JMAX]) {
-		asc->advanced_security = true;
-		asc->junk_packet_max_size = nla_get_u16(info->attrs[WGDEVICE_A_JMAX]);
+		wg->advanced_security = true;
+		wg->jmax = nla_get_u16(info->attrs[WGDEVICE_A_JMAX]);
 	}
 
 	if (info->attrs[WGDEVICE_A_S1]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		wg->junk_size[MSGIDX_HANDSHAKE_INIT] = nla_get_u16(info->attrs[WGDEVICE_A_S1]);
 	}
 
 	if (info->attrs[WGDEVICE_A_S2]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE] = nla_get_u16(info->attrs[WGDEVICE_A_S2]);
 	}
 
 	if (info->attrs[WGDEVICE_A_H1]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H1], GFP_KERNEL);
 		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_INIT], str);
 		kfree(str);
@@ -809,7 +805,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[WGDEVICE_A_H2]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H2], GFP_KERNEL);
 		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE], str);
 		kfree(str);
@@ -818,7 +814,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[WGDEVICE_A_H3]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H3], GFP_KERNEL);
 		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_COOKIE], str);
 		kfree(str);
@@ -827,7 +823,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[WGDEVICE_A_H4]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H4], GFP_KERNEL);
 		ret = mh_parse(&wg->headers[MSGIDX_TRANSPORT], str);
 		kfree(str);
@@ -836,37 +832,37 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[WGDEVICE_A_S3]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] = nla_get_u16(info->attrs[WGDEVICE_A_S3]);
 	}
 
 	if (info->attrs[WGDEVICE_A_S4]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		wg->junk_size[MSGIDX_TRANSPORT] = nla_get_u16(info->attrs[WGDEVICE_A_S4]);
 	}
 
 	if (info->attrs[WGDEVICE_A_I1]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		wg->ispecs[0].desc = nla_strdup(info->attrs[WGDEVICE_A_I1], GFP_KERNEL);
 	}
 
 	if (info->attrs[WGDEVICE_A_I2]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		wg->ispecs[1].desc = nla_strdup(info->attrs[WGDEVICE_A_I2], GFP_KERNEL);
 	}
 
 	if (info->attrs[WGDEVICE_A_I3]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		wg->ispecs[2].desc = nla_strdup(info->attrs[WGDEVICE_A_I3], GFP_KERNEL);
 	}
 
 	if (info->attrs[WGDEVICE_A_I4]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		wg->ispecs[3].desc = nla_strdup(info->attrs[WGDEVICE_A_I4], GFP_KERNEL);
 	}
 
 	if (info->attrs[WGDEVICE_A_I5]) {
-		asc->advanced_security = true;
+		wg->advanced_security = true;
 		wg->ispecs[4].desc = nla_strdup(info->attrs[WGDEVICE_A_I5], GFP_KERNEL);
 	}
 
@@ -909,7 +905,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	}
 skip_set_private_key:
 
-	ret = wg_device_handle_post_config(wg->dev, asc);
+	ret = wg_device_handle_post_config(wg);
 	if (ret < 0)
 		goto out;
 
@@ -933,7 +929,6 @@ out:
 	rtnl_unlock();
 	dev_put(wg->dev);
 out_nodev:
-	kfree(asc);
 	if (info->attrs[WGDEVICE_A_PRIVATE_KEY])
 		memzero_explicit(nla_data(info->attrs[WGDEVICE_A_PRIVATE_KEY]),
 				 nla_len(info->attrs[WGDEVICE_A_PRIVATE_KEY]));

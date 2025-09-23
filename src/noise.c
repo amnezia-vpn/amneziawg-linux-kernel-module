@@ -598,7 +598,7 @@ wg_noise_handshake_consume_initiation(struct message_handshake_initiation *src,
 	u8 e[NOISE_PUBLIC_KEY_LEN];
 	u8 t[NOISE_TIMESTAMP_LEN];
 	u64 initiation_consumption;
-	bool advanced_security = wg->advanced_security_config.advanced_security &&
+	bool advanced_security = wg->advanced_security &&
 	                         mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_INIT]);
 
 	down_read(&wg->static_identity.lock);

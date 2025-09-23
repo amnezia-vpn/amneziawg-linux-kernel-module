@@ -501,88 +501,61 @@ void wg_device_uninit(void)
 	rcu_barrier();
 }
 
-int wg_device_handle_post_config(struct net_device *dev, struct amnezia_config *asc)
+int wg_device_handle_post_config(struct wg_device *wg)
 {
-	struct wg_device *wg = netdev_priv(dev);
-	bool a_sec_on = false;
-	int ret = 0;
 	int err;
 	int i, j;
 
-	if (!asc->advanced_security)
-		goto out;
+	if (!wg->advanced_security)
+		return 0;
 
-	if (asc->junk_packet_count < 0) {
-		net_dbg_ratelimited("%s: JunkPacketCount should be non negative\n", dev->name);
-		ret = -EINVAL;
+	if (wg->jc < 0) {
+		net_dbg_ratelimited("%s: JunkPacketCount should be non negative\n", wg->dev->name);
+		return -EINVAL;
 	}
 
-	wg->advanced_security_config.junk_packet_count = asc->junk_packet_count;
-	if (asc->junk_packet_count != 0)
-		a_sec_on = true;
+	if (wg->jc && wg->jmin == wg->jmax)
+		wg->jmax++;
 
-	wg->advanced_security_config.junk_packet_min_size = asc->junk_packet_min_size;
-	if (asc->junk_packet_min_size != 0)
-		a_sec_on = true;
-
-	if (asc->junk_packet_count > 0 && asc->junk_packet_min_size == asc->junk_packet_max_size)
-		asc->junk_packet_max_size++;
-
-	if (asc->junk_packet_max_size >= MESSAGE_MAX_SIZE) {
-		wg->advanced_security_config.junk_packet_min_size = 0;
-		wg->advanced_security_config.junk_packet_max_size = 1;
-
+	if (wg->jmax >= MESSAGE_MAX_SIZE) {
 		net_dbg_ratelimited("%s: JunkPacketMaxSize: %d; should be smaller than maxSegmentSize: %d\n",
-							dev->name, asc->junk_packet_max_size,
-							MESSAGE_MAX_SIZE);
-		ret = -EINVAL;
-	} else if (asc->junk_packet_max_size < asc->junk_packet_min_size) {
-		net_dbg_ratelimited("%s: maxSize: %d; should be greater than minSize: %d\n",
-							dev->name, asc->junk_packet_max_size,
-							asc->junk_packet_min_size);
-		ret = -EINVAL;
-	} else
-		wg->advanced_security_config.junk_packet_max_size = asc->junk_packet_max_size;
+							wg->dev->name, wg->jmax, MESSAGE_MAX_SIZE);
+		return -EINVAL;
+	}
 
-	if (asc->junk_packet_max_size != 0)
-		a_sec_on = true;
+	if (wg->jmax && wg->jmax < wg->jmin) {
+		net_dbg_ratelimited("%s: maxSize: %d; should be greater than minSize: %d\n",
+							wg->dev->name, wg->jmax, wg->jmin);
+		return -EINVAL;
+	}
 
 	if (wg->junk_size[MSGIDX_HANDSHAKE_INIT] + MESSAGE_INITIATION_SIZE > MESSAGE_MAX_SIZE) {
 		net_dbg_ratelimited("%s: S1 is too large\n", wg->dev->name);
-		err = -EINVAL;
+		return -EINVAL;
 	}
-	else
-		a_sec_on = true;
 
 	if (wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE] + MESSAGE_RESPONSE_SIZE > MESSAGE_MAX_SIZE) {
 		net_dbg_ratelimited("%s: S2 is too large\n", wg->dev->name);
-		err = -EINVAL;
+		return -EINVAL;
 	}
-	else
-		a_sec_on = true;
 
 	if (wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] + MESSAGE_COOKIE_REPLY_SIZE > MESSAGE_MAX_SIZE) {
 		net_dbg_ratelimited("%s: S3 is too large\n", wg->dev->name);
-		err = -EINVAL;
+		return -EINVAL;
 	}
-	else
-		a_sec_on = true;
 
 	if (wg->junk_size[MSGIDX_TRANSPORT] + MESSAGE_TRANSPORT_SIZE > MESSAGE_MAX_SIZE) {
 		net_dbg_ratelimited("%s: S4 is too large\n", wg->dev->name);
-		err = -EINVAL;
+		return -EINVAL;
 	}
-	else
-		a_sec_on = true;
 
 	for (i = 0; i < ARRAY_SIZE(wg->headers); ++i) {
 		for (j = i + 1; j < ARRAY_SIZE(wg->headers); ++j) {
 			if (!(wg->headers[j].end < wg->headers[i].start ||
 				  wg->headers[i].end < wg->headers[j].start)) {
 				net_dbg_ratelimited("%s: H%d and H%d ranges must not overlap\n", wg->dev->name, i + 1, j + 1);
-				ret = -EINVAL;
+				return -EINVAL;
 			}
-			a_sec_on = true;
 		}
 	}
 
@@ -590,12 +563,9 @@ int wg_device_handle_post_config(struct net_device *dev, struct amnezia_config *
 		err = jp_spec_setup(&wg->ispecs[i]);
 		if (err) {
 			net_dbg_ratelimited("%s: I%d-packet invalid format\n", wg->dev->name, i + 1);
-			ret = err;
+			return err;
 		}
-		a_sec_on = true;
 	}
 
-	wg->advanced_security_config.advanced_security = a_sec_on;
-out:
-	return ret;
+	return 0;
 }
