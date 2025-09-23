@@ -10,6 +10,7 @@
 #include "allowedips.h"
 #include "peerlookup.h"
 #include "cookie.h"
+#include "magic_header.h"
 
 #include <linux/types.h>
 #include <linux/netdevice.h>
@@ -44,10 +45,6 @@ struct amnezia_config {
 	u16 junk_packet_max_size;
 	u16 init_packet_junk_size;
 	u16 response_packet_junk_size;
-	u32 init_packet_magic_header;
-	u32 response_packet_magic_header;
-	u32 cookie_packet_magic_header;
-	u32 transport_packet_magic_header;
 };
 
 struct wg_device {
@@ -68,6 +65,8 @@ struct wg_device {
 	unsigned int num_peers, device_update_gen;
 	u32 fwmark;
 	u16 incoming_port;
+
+	struct magic_header headers[4];
 };
 
 int wg_device_init(void);

@@ -5,6 +5,7 @@
 
 #include "netlink.h"
 #include "device.h"
+#include "magic_header.h"
 #include "peer.h"
 #include "socket.h"
 #include "queueing.h"
@@ -46,10 +47,10 @@ static const struct nla_policy device_policy[WGDEVICE_A_MAX + 1] = {
 	[WGDEVICE_A_JMAX]		= { .type = NLA_U16 },
 	[WGDEVICE_A_S1]		= { .type = NLA_U16 },
 	[WGDEVICE_A_S2]		= { .type = NLA_U16 },
-	[WGDEVICE_A_H1]		= { .type = NLA_U32 },
-	[WGDEVICE_A_H2]		= { .type = NLA_U32 },
-	[WGDEVICE_A_H3]		= { .type = NLA_U32 },
-	[WGDEVICE_A_H4]		= { .type = NLA_U32 },
+	[WGDEVICE_A_H1]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_H2]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_H3]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_H4]		= { .type = NLA_NUL_STRING },
 	[WGDEVICE_A_PEER]	= { .type = NLA_NESTED }
 };
 
@@ -408,6 +409,7 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 	int ret = -EMSGSIZE;
 	bool done = true;
 	void *hdr;
+	char buf[32];
 
 	rtnl_lock();
 	mutex_lock(&wg->device_update_lock);
@@ -436,14 +438,14 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 					    wg->advanced_security_config.init_packet_junk_size) ||
 		    nla_put_u16(skb, WGDEVICE_A_S2,
 					    wg->advanced_security_config.response_packet_junk_size) ||
-		    nla_put_u32(skb, WGDEVICE_A_H1,
-					    wg->advanced_security_config.init_packet_magic_header) ||
-		    nla_put_u32(skb, WGDEVICE_A_H2,
-					    wg->advanced_security_config.response_packet_magic_header) ||
-		    nla_put_u32(skb, WGDEVICE_A_H3,
-					    wg->advanced_security_config.cookie_packet_magic_header) ||
-		    nla_put_u32(skb, WGDEVICE_A_H4,
-					    wg->advanced_security_config.transport_packet_magic_header))
+		    (mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_INIT], buf, sizeof(buf)) &&
+				nla_put_string(skb, WGDEVICE_A_H1, buf)) ||
+			(mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE], buf, sizeof(buf)) &&
+				nla_put_string(skb, WGDEVICE_A_H2, buf)) ||
+			(mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_COOKIE], buf, sizeof(buf)) &&
+				nla_put_string(skb, WGDEVICE_A_H3, buf)) ||
+			(mh_genspec(&wg->headers[MSGIDX_TRANSPORT], buf, sizeof(buf)) &&
+				nla_put_string(skb, WGDEVICE_A_H4, buf))
 			goto out;
 
 		down_read(&wg->static_identity.lock);
@@ -712,6 +714,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	struct amnezia_config *asc = kzalloc(sizeof(*asc), GFP_KERNEL);
 	u32 flags = 0;
 	int ret;
+	char *str;
 
 	if (IS_ERR(wg)) {
 		ret = PTR_ERR(wg);
@@ -781,22 +784,38 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 
 	if (info->attrs[WGDEVICE_A_H1]) {
 		asc->advanced_security = true;
-		asc->init_packet_magic_header = nla_get_u32(info->attrs[WGDEVICE_A_H1]);
+		str = nla_strdup(info->attrs[WGDEVICE_A_H1], GFP_KERNEL);
+		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_INIT], str);
+		kfree(str);
+		if (ret)
+			goto out;
 	}
 
 	if (info->attrs[WGDEVICE_A_H2]) {
 		asc->advanced_security = true;
-		asc->response_packet_magic_header = nla_get_u32(info->attrs[WGDEVICE_A_H2]);
+		str = nla_strdup(info->attrs[WGDEVICE_A_H2], GFP_KERNEL);
+		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE], str);
+		kfree(str);
+		if (ret)
+			goto out;
 	}
 
 	if (info->attrs[WGDEVICE_A_H3]) {
 		asc->advanced_security = true;
-		asc->cookie_packet_magic_header = nla_get_u32(info->attrs[WGDEVICE_A_H3]);
+		str = nla_strdup(info->attrs[WGDEVICE_A_H3], GFP_KERNEL);
+		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_COOKIE], str);
+		kfree(str);
+		if (ret)
+			goto out;
 	}
 
 	if (info->attrs[WGDEVICE_A_H4]) {
 		asc->advanced_security = true;
-		asc->transport_packet_magic_header = nla_get_u32(info->attrs[WGDEVICE_A_H4]);
+		str = nla_strdup(info->attrs[WGDEVICE_A_H4], GFP_KERNEL);
+		ret = mh_parse(&wg->headers[MSGIDX_TRANSPORT], str);
+		kfree(str);
+		if (ret)
+			goto out;
 	}
 
 	if (flags & WGDEVICE_F_REPLACE_PEERS)

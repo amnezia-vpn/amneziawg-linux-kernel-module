@@ -307,6 +307,23 @@ static void wg_setup(struct net_device *dev)
 
 	memset(wg, 0, sizeof(*wg));
 	wg->dev = dev;
+
+	wg->headers[MSGIDX_HANDSHAKE_INIT] = (struct magic_header) {
+		.start = MESSAGE_HANDSHAKE_INITIATION,
+		.end = MESSAGE_HANDSHAKE_INITIATION
+	};
+	wg->headers[MSGIDX_HANDSHAKE_RESPONSE] = (struct magic_header) {
+		.start = MESSAGE_HANDSHAKE_RESPONSE,
+		.end = MESSAGE_HANDSHAKE_RESPONSE
+	};
+	wg->headers[MSGIDX_HANDSHAKE_COOKIE] = (struct magic_header) {
+		.start = MESSAGE_HANDSHAKE_COOKIE,
+		.end = MESSAGE_HANDSHAKE_COOKIE
+	};
+	wg->headers[MSGIDX_TRANSPORT] = (struct magic_header) {
+		.start = MESSAGE_DATA,
+		.end = MESSAGE_DATA
+	};
 }
 
 static int wg_newlink(struct net *src_net, struct net_device *dev,
@@ -381,11 +398,6 @@ static int wg_newlink(struct net *src_net, struct net_device *dev,
 	 * register_netdevice doesn't call it for us if it fails.
 	 */
 	dev->priv_destructor = wg_destruct;
-
-	wg->advanced_security_config.init_packet_magic_header = MESSAGE_HANDSHAKE_INITIATION;
-	wg->advanced_security_config.response_packet_magic_header = MESSAGE_HANDSHAKE_RESPONSE;
-	wg->advanced_security_config.cookie_packet_magic_header = MESSAGE_HANDSHAKE_COOKIE;
-	wg->advanced_security_config.transport_packet_magic_header = MESSAGE_DATA;
 
 	pr_debug("%s: Interface created\n", dev->name);
 	return ret;
@@ -550,39 +562,15 @@ int wg_device_handle_post_config(struct net_device *dev, struct amnezia_config *
 	if (asc->response_packet_junk_size != 0)
 		a_sec_on = true;
 
-	if (asc->init_packet_magic_header > MESSAGE_DATA) {
-		a_sec_on = true;
-		wg->advanced_security_config.init_packet_magic_header = asc->init_packet_magic_header;
-	}
-
-	if (asc->response_packet_magic_header > MESSAGE_DATA) {
-		a_sec_on = true;
-		wg->advanced_security_config.response_packet_magic_header = asc->response_packet_magic_header;
-	}
-
-	if (asc->cookie_packet_magic_header > MESSAGE_DATA) {
-		a_sec_on = true;
-		wg->advanced_security_config.cookie_packet_magic_header = asc->cookie_packet_magic_header;
-	}
-
-	if (asc->transport_packet_magic_header > MESSAGE_DATA) {
-		a_sec_on = true;
-		wg->advanced_security_config.transport_packet_magic_header = asc->transport_packet_magic_header;
-	}
-
-	if (wg->advanced_security_config.init_packet_magic_header == wg->advanced_security_config.response_packet_magic_header ||
-			wg->advanced_security_config.init_packet_magic_header == wg->advanced_security_config.cookie_packet_magic_header ||
-			wg->advanced_security_config.init_packet_magic_header == wg->advanced_security_config.transport_packet_magic_header ||
-			wg->advanced_security_config.response_packet_magic_header == wg->advanced_security_config.cookie_packet_magic_header ||
-			wg->advanced_security_config.response_packet_magic_header == wg->advanced_security_config.transport_packet_magic_header ||
-			wg->advanced_security_config.cookie_packet_magic_header == wg->advanced_security_config.transport_packet_magic_header) {
-		net_dbg_ratelimited("%s: magic headers should differ; got: init:%d; recv:%d; unde:%d; tran:%d\n",
-		                    dev->name,
-							wg->advanced_security_config.init_packet_magic_header,
-		                    wg->advanced_security_config.response_packet_magic_header,
-							wg->advanced_security_config.cookie_packet_magic_header,
-							wg->advanced_security_config.transport_packet_magic_header);
-		ret = -EINVAL;
+	for (i = 0; i < ARRAY_SIZE(wg->headers); ++i) {
+		for (j = i + 1; j < ARRAY_SIZE(wg->headers); ++j) {
+			if (!(wg->headers[j].end < wg->headers[i].start ||
+				  wg->headers[i].end < wg->headers[j].start)) {
+				net_dbg_ratelimited("%s: H%d and H%d ranges must not overlap\n", wg->dev->name, i + 1, j + 1);
+				ret = -EINVAL;
+			}
+			a_sec_on = true;
+		}
 	}
 
 	if (MESSAGE_INITIATION_SIZE + wg->advanced_security_config.init_packet_junk_size ==
