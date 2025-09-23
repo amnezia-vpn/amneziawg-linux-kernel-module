@@ -4,6 +4,7 @@
  */
 
 #include "compat/compat.h"
+#include "magic_header.h"
 #include "queueing.h"
 #include "timers.h"
 #include "device.h"
@@ -61,13 +62,7 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 		kfree(buffer);
 	}
 
-	net_dbg_ratelimited("%s: Initiation magic header: %u\n",
-	                    peer->device->dev->name,
-						peer->advanced_security ? wg->advanced_security_config.init_packet_magic_header :
-						MESSAGE_HANDSHAKE_INITIATION);
-
-	if (wg_noise_handshake_create_initiation(&packet, &peer->handshake, peer->advanced_security ?
-			wg->advanced_security_config.init_packet_magic_header : MESSAGE_HANDSHAKE_INITIATION)) {
+	if (wg_noise_handshake_create_initiation(&packet, &peer->handshake, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_INIT]))) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);
 		wg_timers_any_authenticated_packet_traversal(peer);
 		wg_timers_any_authenticated_packet_sent(peer);
@@ -134,10 +129,7 @@ void wg_packet_send_handshake_response(struct wg_peer *peer)
 			    peer->device->dev->name, peer->internal_id,
 			    &peer->endpoint.addr);
 
-	if (wg_noise_handshake_create_response(&packet, &peer->handshake,
-		                                   peer->advanced_security ?
-		                                   wg->advanced_security_config.response_packet_magic_header :
-		                                   MESSAGE_HANDSHAKE_RESPONSE)) {
+	if (wg_noise_handshake_create_response(&packet, &peer->handshake, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE]))) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);
 		if (wg_noise_handshake_begin_session(&peer->handshake,
 						     &peer->keypairs)) {
@@ -169,17 +161,8 @@ void wg_packet_send_handshake_cookie(struct wg_device *wg,
 	net_dbg_skb_ratelimited("%s: Sending cookie response for denied handshake message for %pISpfsc\n",
 				wg->dev->name, initiating_skb);
 
-	if (SKB_TYPE_LE32(initiating_skb) == cpu_to_le32(MESSAGE_HANDSHAKE_INITIATION) ||
-	    SKB_TYPE_LE32(initiating_skb) == cpu_to_le32(MESSAGE_HANDSHAKE_RESPONSE)) {
-		wg_cookie_message_create(&packet, initiating_skb, sender_index,
-		                         &wg->cookie_checker, MESSAGE_HANDSHAKE_COOKIE);
-
-	} else {
-		wg_cookie_message_create(&packet, initiating_skb, sender_index,
-		                         &wg->cookie_checker, wg->advanced_security_config.cookie_packet_magic_header);
-	}
-	wg_socket_send_buffer_as_reply_to_skb(wg, initiating_skb, &packet,
-					      sizeof(packet));
+	wg_cookie_message_create(&packet, initiating_skb, sender_index, &wg->cookie_checker, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_COOKIE]));
+	wg_socket_send_buffer_as_reply_to_skb(wg, initiating_skb, &packet, sizeof(packet));
 }
 
 static void keep_key_fresh(struct wg_peer *peer)
@@ -364,7 +347,8 @@ void wg_packet_encrypt_worker(struct work_struct *work)
 		skb_list_walk_safe(first, skb, next) {
 			wg = PACKET_PEER(first)->device;
 
-			if (likely(encrypt_packet(PACKET_PEER(first)->advanced_security ?
+			if (likely(encrypt_packet(
+						  mh_genheader(&wg->headers[MSGIDX_TRANSPORT]),
 						  wg->advanced_security_config.transport_packet_magic_header : MESSAGE_DATA,
 						  skb,
 						  PACKET_CB(first)->keypair

@@ -5,6 +5,7 @@
 
 #include "noise.h"
 #include "device.h"
+#include "magic_header.h"
 #include "peer.h"
 #include "messages.h"
 #include "queueing.h"
@@ -360,7 +361,7 @@ static void kdf(u8 *first_dst, u8 *second_dst, u8 *third_dst, const u8 *data,
 
 	/* Extract entropy from data into secret */
 	hmac(secret, data, chaining_key, data_len, NOISE_HASH_LEN);
-
+		
 	if (!first_dst || !first_len)
 		goto out;
 
@@ -598,7 +599,7 @@ wg_noise_handshake_consume_initiation(struct message_handshake_initiation *src,
 	u8 t[NOISE_TIMESTAMP_LEN];
 	u64 initiation_consumption;
 	bool advanced_security = wg->advanced_security_config.advanced_security &&
-	                         (SKB_TYPE_LE32(skb) == cpu_to_le32(wg->advanced_security_config.init_packet_magic_header));
+	                         mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_INIT]);
 
 	down_read(&wg->static_identity.lock);
 	if (unlikely(!wg->static_identity.has_identity))

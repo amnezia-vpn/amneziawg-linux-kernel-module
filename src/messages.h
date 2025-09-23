@@ -61,6 +61,13 @@ enum message_type {
 	MESSAGE_DATA = 4
 };
 
+enum message_index {
+	MSGIDX_HANDSHAKE_INIT = MESSAGE_HANDSHAKE_INITIATION - 1,
+	MSGIDX_HANDSHAKE_RESPONSE = MESSAGE_HANDSHAKE_RESPONSE - 1,
+	MSGIDX_HANDSHAKE_COOKIE = MESSAGE_HANDSHAKE_COOKIE - 1,
+	MSGIDX_TRANSPORT = MESSAGE_DATA - 1
+};
+
 struct message_header {
 	/* The actual layout of this that we want is:
 	 * u8 type
