@@ -54,7 +54,7 @@ static int __init wg_mod_init(void)
 
 	pr_info("AmneziaWG " WIREGUARD_VERSION " loaded. See amnezia.org for information.\n");
 	pr_info("Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.\n");
-	pr_info("Copyright (C) 2024 AmneziaVPN <admin@amnezia.org>. All Rights Reserved.\n");
+	pr_info("Copyright (C) 2024-2025 AmneziaVPN <admin@amnezia.org>. All Rights Reserved.\n");
 
 	return 0;
 
