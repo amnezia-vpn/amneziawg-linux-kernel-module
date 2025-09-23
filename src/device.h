@@ -43,8 +43,6 @@ struct amnezia_config {
 	u16 junk_packet_count;
 	u16 junk_packet_min_size;
 	u16 junk_packet_max_size;
-	u16 init_packet_junk_size;
-	u16 response_packet_junk_size;
 };
 
 struct wg_device {
@@ -67,6 +65,7 @@ struct wg_device {
 	u16 incoming_port;
 
 	struct magic_header headers[4];
+	u16 junk_size[4];
 };
 
 int wg_device_init(void);

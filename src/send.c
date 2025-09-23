@@ -56,7 +56,7 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 
 			get_random_bytes(buffer, junk_packet_size);
 			get_random_bytes(&ds, 1);
-			wg_socket_send_buffer_to_peer(peer, buffer, junk_packet_size, ds);
+			wg_socket_send_buffer_to_peer(peer, buffer, junk_packet_size, ds, 0);
 		}
 
 		kfree(buffer);
@@ -69,13 +69,7 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 		atomic64_set(&peer->last_sent_handshake,
 			     ktime_get_coarse_boottime_ns());
 
-		if (wg->advanced_security_config.advanced_security && peer->advanced_security) {
-			wg_socket_send_junked_buffer_to_peer(peer, &packet, sizeof(packet),
-			                              HANDSHAKE_DSCP, wg->advanced_security_config.init_packet_junk_size);
-		} else {
-			wg_socket_send_buffer_to_peer(peer, &packet, sizeof(packet),
-			                              HANDSHAKE_DSCP);
-		}
+		wg_socket_send_buffer_to_peer(peer, &packet, sizeof(packet), HANDSHAKE_DSCP, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
 		wg_timers_handshake_initiated(peer);
 	}
 }
@@ -138,16 +132,7 @@ void wg_packet_send_handshake_response(struct wg_peer *peer)
 			wg_timers_any_authenticated_packet_sent(peer);
 			atomic64_set(&peer->last_sent_handshake,
 				     ktime_get_coarse_boottime_ns());
-			if (wg->advanced_security_config.advanced_security && peer->advanced_security) {
-				wg_socket_send_junked_buffer_to_peer(peer, &packet,
-				                              sizeof(packet),
-				                              HANDSHAKE_DSCP,
-				                              wg->advanced_security_config.response_packet_junk_size);
-			} else {
-				wg_socket_send_buffer_to_peer(peer, &packet,
-							      sizeof(packet),
-							      HANDSHAKE_DSCP);
-			}
+			wg_socket_send_buffer_to_peer(peer, &packet, sizeof(packet), HANDSHAKE_DSCP, wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]);
 		}
 	}
 }
@@ -162,7 +147,7 @@ void wg_packet_send_handshake_cookie(struct wg_device *wg,
 				wg->dev->name, initiating_skb);
 
 	wg_cookie_message_create(&packet, initiating_skb, sender_index, &wg->cookie_checker, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_COOKIE]));
-	wg_socket_send_buffer_as_reply_to_skb(wg, initiating_skb, &packet, sizeof(packet));
+	wg_socket_send_buffer_as_reply_to_skb(wg, initiating_skb, &packet, sizeof(packet), wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
 }
 
 static void keep_key_fresh(struct wg_peer *peer)
@@ -203,7 +188,7 @@ static unsigned int calculate_skb_padding(struct sk_buff *skb)
 	return padded_size - last_unit;
 }
 
-static bool encrypt_packet(u32 message_type, struct sk_buff *skb, struct noise_keypair *keypair
+static bool encrypt_packet(u32 message_type, size_t junk_size, struct sk_buff *skb, struct noise_keypair *keypair
 			   COMPAT_MAYBE_SIMD_CONTEXT(simd_context_t *simd_context))
 {
 	unsigned int padding_len, plaintext_len, trailer_len;
@@ -235,7 +220,7 @@ static bool encrypt_packet(u32 message_type, struct sk_buff *skb, struct noise_k
 	/* Expand head section to have room for our header and the network
 	 * stack's headers.
 	 */
-	if (unlikely(skb_cow_head(skb, DATA_PACKET_HEAD_ROOM) < 0))
+	if (unlikely(skb_cow_head(skb, DATA_PACKET_HEAD_ROOM + junk_size) < 0))
 		return false;
 
 	/* Finalize checksum calculation for the inner packet, if required. */
@@ -253,9 +238,11 @@ static bool encrypt_packet(u32 message_type, struct sk_buff *skb, struct noise_k
 	header->counter = cpu_to_le64(PACKET_CB(skb)->nonce);
 	pskb_put(skb, trailer, trailer_len);
 
+	get_random_bytes(skb_push(skb, junk_size), junk_size);
+
 	/* Now we can encrypt the scattergather segments */
 	sg_init_table(sg, num_frags);
-	if (skb_to_sgvec(skb, sg, sizeof(struct message_data),
+	if (skb_to_sgvec(skb, sg, sizeof(struct message_data) + junk_size,
 			 noise_encrypted_len(plaintext_len)) <= 0)
 		return false;
 	return chacha20poly1305_encrypt_sg_inplace(sg, plaintext_len, NULL, 0,
@@ -349,7 +336,7 @@ void wg_packet_encrypt_worker(struct work_struct *work)
 
 			if (likely(encrypt_packet(
 						  mh_genheader(&wg->headers[MSGIDX_TRANSPORT]),
-						  wg->advanced_security_config.transport_packet_magic_header : MESSAGE_DATA,
+						  wg->junk_size[MSGIDX_TRANSPORT],
 						  skb,
 						  PACKET_CB(first)->keypair
 						  COMPAT_MAYBE_SIMD_CONTEXT(&simd_context)))) {
