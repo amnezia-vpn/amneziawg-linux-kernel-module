@@ -53,7 +53,12 @@ static const struct nla_policy device_policy[WGDEVICE_A_MAX + 1] = {
 	[WGDEVICE_A_H4]		= { .type = NLA_NUL_STRING },
 	[WGDEVICE_A_PEER]	= { .type = NLA_NESTED },
 	[WGDEVICE_A_S3]		= { .type = NLA_U16 },
-	[WGDEVICE_A_S4]		= { .type = NLA_U16 }
+	[WGDEVICE_A_S4]		= { .type = NLA_U16 },
+	[WGDEVICE_A_I1]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_I2]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_I3]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_I4]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_I5]		= { .type = NLA_NUL_STRING }
 };
 
 static const struct nla_policy peer_policy[WGPEER_A_MAX + 1] = {
@@ -447,7 +452,17 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 			(mh_genspec(&wg->headers[MSGIDX_TRANSPORT], buf, sizeof(buf)) &&
 				nla_put_string(skb, WGDEVICE_A_H4, buf)) ||
 			nla_put_u16(skb, WGDEVICE_A_S3, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]) ||
-			nla_put_u16(skb, WGDEVICE_A_S4, wg->junk_size[MSGIDX_TRANSPORT])
+			nla_put_u16(skb, WGDEVICE_A_S4, wg->junk_size[MSGIDX_TRANSPORT]) ||
+			(wg->ispecs[0].desc &&
+				nla_put_string(skb, WGDEVICE_A_I1, wg->ispecs[0].desc)) ||
+			(wg->ispecs[1].desc &&
+				nla_put_string(skb, WGDEVICE_A_I2, wg->ispecs[1].desc)) ||
+			(wg->ispecs[2].desc &&
+				nla_put_string(skb, WGDEVICE_A_I3, wg->ispecs[2].desc)) ||
+			(wg->ispecs[3].desc &&
+				nla_put_string(skb, WGDEVICE_A_I4, wg->ispecs[3].desc)) ||
+			(wg->ispecs[4].desc &&
+				nla_put_string(skb, WGDEVICE_A_I5, wg->ispecs[4].desc)))
 			goto out;
 
 		down_read(&wg->static_identity.lock);
@@ -828,6 +843,31 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	if (info->attrs[WGDEVICE_A_S4]) {
 		asc->advanced_security = true;
 		wg->junk_size[MSGIDX_TRANSPORT] = nla_get_u16(info->attrs[WGDEVICE_A_S4]);
+	}
+
+	if (info->attrs[WGDEVICE_A_I1]) {
+		asc->advanced_security = true;
+		wg->ispecs[0].desc = nla_strdup(info->attrs[WGDEVICE_A_I1], GFP_KERNEL);
+	}
+
+	if (info->attrs[WGDEVICE_A_I2]) {
+		asc->advanced_security = true;
+		wg->ispecs[1].desc = nla_strdup(info->attrs[WGDEVICE_A_I2], GFP_KERNEL);
+	}
+
+	if (info->attrs[WGDEVICE_A_I3]) {
+		asc->advanced_security = true;
+		wg->ispecs[2].desc = nla_strdup(info->attrs[WGDEVICE_A_I3], GFP_KERNEL);
+	}
+
+	if (info->attrs[WGDEVICE_A_I4]) {
+		asc->advanced_security = true;
+		wg->ispecs[3].desc = nla_strdup(info->attrs[WGDEVICE_A_I4], GFP_KERNEL);
+	}
+
+	if (info->attrs[WGDEVICE_A_I5]) {
+		asc->advanced_security = true;
+		wg->ispecs[4].desc = nla_strdup(info->attrs[WGDEVICE_A_I5], GFP_KERNEL);
 	}
 
 	if (flags & WGDEVICE_F_REPLACE_PEERS)

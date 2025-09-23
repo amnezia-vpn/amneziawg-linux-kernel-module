@@ -6,6 +6,7 @@
 #ifndef _WG_DEVICE_H
 #define _WG_DEVICE_H
 
+#include "junk.h"
 #include "noise.h"
 #include "allowedips.h"
 #include "peerlookup.h"
@@ -64,6 +65,7 @@ struct wg_device {
 	u32 fwmark;
 	u16 incoming_port;
 
+	struct jp_spec ispecs[5];
 	struct magic_header headers[4];
 	u16 junk_size[4];
 };
