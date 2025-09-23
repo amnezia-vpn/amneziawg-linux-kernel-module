@@ -540,26 +540,32 @@ int wg_device_handle_post_config(struct net_device *dev, struct amnezia_config *
 	if (asc->junk_packet_max_size != 0)
 		a_sec_on = true;
 
-	if (asc->init_packet_junk_size + MESSAGE_INITIATION_SIZE >= MESSAGE_MAX_SIZE) {
-		net_dbg_ratelimited("%s: init header size (%d) + junkSize (%d) should be smaller than maxSegmentSize: %d\n",
-		                    dev->name, MESSAGE_INITIATION_SIZE,
-							asc->init_packet_junk_size, MESSAGE_MAX_SIZE);
-		ret = -EINVAL;
-	} else
-		wg->advanced_security_config.init_packet_junk_size = asc->init_packet_junk_size;
-
-	if (asc->init_packet_junk_size != 0)
+	if (wg->junk_size[MSGIDX_HANDSHAKE_INIT] + MESSAGE_INITIATION_SIZE > MESSAGE_MAX_SIZE) {
+		net_dbg_ratelimited("%s: S1 is too large\n", wg->dev->name);
+		err = -EINVAL;
+	}
+	else
 		a_sec_on = true;
 
-	if (asc->response_packet_junk_size + MESSAGE_RESPONSE_SIZE >= MESSAGE_MAX_SIZE) {
-		net_dbg_ratelimited("%s: response header size (%d) + junkSize (%d) should be smaller than maxSegmentSize: %d\n",
-		                    dev->name, MESSAGE_RESPONSE_SIZE,
-		                    asc->response_packet_junk_size, MESSAGE_MAX_SIZE);
-		ret = -EINVAL;
-	} else
-		wg->advanced_security_config.response_packet_junk_size = asc->response_packet_junk_size;
+	if (wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE] + MESSAGE_RESPONSE_SIZE > MESSAGE_MAX_SIZE) {
+		net_dbg_ratelimited("%s: S2 is too large\n", wg->dev->name);
+		err = -EINVAL;
+	}
+	else
+		a_sec_on = true;
 
-	if (asc->response_packet_junk_size != 0)
+	if (wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] + MESSAGE_COOKIE_REPLY_SIZE > MESSAGE_MAX_SIZE) {
+		net_dbg_ratelimited("%s: S3 is too large\n", wg->dev->name);
+		err = -EINVAL;
+	}
+	else
+		a_sec_on = true;
+
+	if (wg->junk_size[MSGIDX_TRANSPORT] + MESSAGE_TRANSPORT_SIZE > MESSAGE_MAX_SIZE) {
+		net_dbg_ratelimited("%s: S4 is too large\n", wg->dev->name);
+		err = -EINVAL;
+	}
+	else
 		a_sec_on = true;
 
 	for (i = 0; i < ARRAY_SIZE(wg->headers); ++i) {
@@ -571,15 +577,6 @@ int wg_device_handle_post_config(struct net_device *dev, struct amnezia_config *
 			}
 			a_sec_on = true;
 		}
-	}
-
-	if (MESSAGE_INITIATION_SIZE + wg->advanced_security_config.init_packet_junk_size ==
-		MESSAGE_RESPONSE_SIZE + wg->advanced_security_config.response_packet_junk_size) {
-		net_dbg_ratelimited("%s: new init size:%d; and new response size:%d; should differ\n",
-		                    dev->name,
-		                    MESSAGE_INITIATION_SIZE + asc->init_packet_junk_size,
-		                    MESSAGE_RESPONSE_SIZE + asc->response_packet_junk_size);
-		ret = -EINVAL;
 	}
 
 	wg->advanced_security_config.advanced_security = a_sec_on;

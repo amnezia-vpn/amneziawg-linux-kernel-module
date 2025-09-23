@@ -33,30 +33,36 @@ static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg)
 		return 0;
 	}
 	
-	if (skb->len == wg->advanced_security_config.init_packet_junk_size + MESSAGE_INITIATION_SIZE) {
-		skb_pull(skb, wg->advanced_security_config.init_packet_junk_size);
+	if (skb->len == wg->junk_size[MSGIDX_HANDSHAKE_INIT] + MESSAGE_INITIATION_SIZE) {
+		skb_pull(skb, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
 		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_INIT]))
 			return MESSAGE_INITIATION_SIZE;
 		else
-			skb_push(skb, wg->advanced_security_config.init_packet_junk_size);
+			skb_push(skb, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
 	}
 
-	if (skb->len == wg->advanced_security_config.response_packet_junk_size + MESSAGE_RESPONSE_SIZE) {
-		skb_pull(skb, wg->advanced_security_config.response_packet_junk_size);
+	if (skb->len == wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE] + MESSAGE_RESPONSE_SIZE) {
+		skb_pull(skb, wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]);
 		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_RESPONSE]))
 			return MESSAGE_RESPONSE_SIZE;
 		else
-			skb_push(skb, wg->advanced_security_config.response_packet_junk_size);
+			skb_push(skb, wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]);
 	}
 
-	if (skb->len == MESSAGE_COOKIE_REPLY_SIZE) {
+	if (skb->len == wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] + MESSAGE_COOKIE_REPLY_SIZE) {
+		skb_pull(skb, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
 		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_COOKIE]))
 			return MESSAGE_HANDSHAKE_COOKIE;
+		else
+			skb_push(skb, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
 	}
 
-	if (skb->len >= MESSAGE_TRANSPORT_SIZE) {
+	if (skb->len >= wg->junk_size[MSGIDX_TRANSPORT] + MESSAGE_TRANSPORT_SIZE) {
+		skb_pull(skb, wg->junk_size[MSGIDX_TRANSPORT]);
 		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_TRANSPORT]))
 			return MESSAGE_TRANSPORT_SIZE;
+		else
+			skb_push(skb, wg->junk_size[MSGIDX_TRANSPORT]);
 	}
 
 	net_dbg_skb_ratelimited("%s: Unknown message from %pISpfsc encountered, packet dropped\n",

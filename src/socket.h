@@ -15,14 +15,12 @@ int wg_socket_init(struct wg_device *wg, u16 port);
 void wg_socket_reinit(struct wg_device *wg, struct sock *new4,
 		      struct sock *new6);
 int wg_socket_send_buffer_to_peer(struct wg_peer *peer, void *data,
-				  size_t len, u8 ds);
-int wg_socket_send_junked_buffer_to_peer(struct wg_peer *peer, void *data,
-                                  size_t len, u8 ds, u16 junk_size);
+				  size_t len, u8 ds, size_t junk_size);
 int wg_socket_send_skb_to_peer(struct wg_peer *peer, struct sk_buff *skb,
 			       u8 ds);
 int wg_socket_send_buffer_as_reply_to_skb(struct wg_device *wg,
 					  struct sk_buff *in_skb,
-					  void *out_buffer, size_t len);
+					  void *out_buffer, size_t len, size_t junk_size);
 
 int wg_socket_endpoint_from_skb(struct endpoint *endpoint,
 				const struct sk_buff *skb);
