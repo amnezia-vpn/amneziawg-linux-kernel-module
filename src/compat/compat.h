@@ -888,13 +888,14 @@ static inline void skb_mark_not_on_list(struct sk_buff *skb)
 #endif
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 200) || (LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 249)) || (LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 285)) || (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 320))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 200) || (LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 249)) || (LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 285)) || (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 320))) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+#define COMPAT_INIT_CRYPTO
 #define blake2s_init zinc_blake2s_init
 #define blake2s_init_key zinc_blake2s_init_key
 #define blake2s_update zinc_blake2s_update
 #define blake2s_final zinc_blake2s_final
 #endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 5, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 5, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 #define blake2s_hmac zinc_blake2s_hmac
 #define chacha20 zinc_chacha20
 #define hchacha20 zinc_hchacha20
@@ -937,6 +938,13 @@ static inline void skb_mark_not_on_list(struct sk_buff *skb)
 #define chacha20_arm zinc_chacha20_arm
 #define hchacha20_arm zinc_hchacha20_arm
 #define chacha20_neon zinc_chacha20_neon
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+#define COMPAT_CRYPTO_IS_ZINC
+#define COMPAT_MAYBE_SIMD_CONTEXT(ctx) , ctx
+#else
+#define COMPAT_MAYBE_SIMD_CONTEXT(ctx)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0) && !defined(ISRHEL7)
@@ -1117,7 +1125,7 @@ static const struct header_ops ip_tunnel_header_ops = { .parse_protocol = ip_tun
 #endif
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 30)
 #include <net/dst_cache.h>
 struct dst_cache_pcpu {
 	unsigned long refresh_ts;
@@ -1190,6 +1198,79 @@ static inline void dst_cache_reset_now(struct dst_cache *dst_cache)
 #define timer_setup(a, b, c) setup_timer(a, ((void (*)(unsigned long))b), ((unsigned long)a))
 #undef from_timer
 #define from_timer(var, callback_timer, timer_fieldname) container_of((struct timer_list *)callback_timer, typeof(*var), timer_fieldname)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+#include <net/flow.h>
+#define flowi4_to_flowi_common(fl4) flowi4_to_flowi(fl4)
+#define flowi6_to_flowi_common(fl4) flowi6_to_flowi(fl4)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
+#define genl_info_dump(cb) genl_dumpit_info(cb)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 84) && \
+	!(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 312) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)) && \
+	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 274) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0)) && \
+	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 215) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)) && \
+	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 154) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
+#define timer_delete_sync(timer) del_timer_sync(timer)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0)
+#include <linux/random.h>
+static inline u32 get_random_u32_below(u32 ceil)
+{
+	return get_random_u32() % ceil;
+}
+static inline u32 get_random_u32_inclusive(u32 floor, u32 ceil)
+{
+	return floor + get_random_u32_below(ceil - floor + 1);
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+#define COMPAT_NETIF_HAS_WEIGHT
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+#define COMPAT_GENL_HAS_RESV_START_OP
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0) && \
+	!(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 296) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)) && \
+	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 229) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0)) && \
+	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 163) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)) && \
+	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 86) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
+#undef DEV_STATS_INC
+#define DEV_STATS_INC(DEV, FIELD) ++DEV->stats.FIELD
+#undef DEV_STATS_ADD
+#define DEV_STATS_ADD(DEV, FIELD, VAL) DEV->stats.FIELD += VAL
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
+#define COMPAT_SKB_HAS_SKB_START
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+#define dev_get_tstats64 ip_tunnel_get_stats64
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
+#define COMPAT_NETDEV_HAS_LLTX_PARAM
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 6, 0)
+static inline void dev_sw_netstats_rx_add(struct net_device *dev, unsigned int len) {
+	struct pcpu_sw_netstats *tstats = get_cpu_ptr(dev->tstats);
+
+	u64_stats_update_begin(&tstats->syncp);
+	++tstats->rx_packets;
+	tstats->rx_bytes += len;
+	u64_stats_update_end(&tstats->syncp);
+	put_cpu_ptr(tstats);
+}
 #endif
 
 #endif /* _WG_COMPAT_H */

@@ -13,7 +13,7 @@
 #include <linux/if.h>
 #include <net/genetlink.h>
 #include <net/sock.h>
-#include <crypto/algapi.h>
+#include <crypto/utils.h>
 #include <linux/random.h>
 #include <linux/bitops.h>
 
@@ -356,8 +356,8 @@ get_peer(struct wg_peer *peer, struct sk_buff *skb, struct dump_ctx *ctx)
 	if (!allowedips_node)
 		goto no_allowedips;
 	if (!ctx->allowedips_seq)
-		ctx->allowedips_seq = peer->device->peer_allowedips.seq;
-	else if (ctx->allowedips_seq != peer->device->peer_allowedips.seq)
+		ctx->allowedips_seq = ctx->wg->peer_allowedips.seq;
+	else if (ctx->allowedips_seq != ctx->wg->peer_allowedips.seq)
 		goto no_allowedips;
 
 	allowedips_nest = nla_nest_start(skb, WGPEER_A_ALLOWEDIPS);
@@ -392,7 +392,7 @@ static int wg_get_device_start(struct netlink_callback *cb)
 {
 	struct wg_device *wg;
 
-	wg = lookup_interface(genl_dumpit_info(cb)->attrs, cb->skb);
+	wg = lookup_interface(genl_info_dump(cb)->attrs, cb->skb);
 	if (IS_ERR(wg))
 		return PTR_ERR(wg);
 	DUMP_CTX(cb)->wg = wg;
@@ -892,7 +892,6 @@ struct genl_ops genl_ops[] = {
 #ifdef COMPAT_CANNOT_INDIVIDUAL_NETLINK_OPS_POLICY
 		.policy = device_policy,
 #endif
-		// Dummy comment to reduce fuzziness of patch file
 		.flags = GENL_UNS_ADMIN_PERM
 	}
 };
@@ -910,6 +909,9 @@ __ro_after_init = {
 	.n_ops = ARRAY_SIZE(genl_ops),
 #else
 = {
+#endif
+#ifdef COMPAT_GENL_HAS_RESV_START_OP
+	.resv_start_op = WG_CMD_SET_DEVICE + 1,
 #endif
 	.name = WG_GENL_NAME,
 	.version = WG_GENL_VERSION,
