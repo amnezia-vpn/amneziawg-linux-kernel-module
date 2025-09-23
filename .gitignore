@@ -24,3 +24,5 @@ src/crypto/zinc/*/*.S
 src/amneziawg.mod
 src/generated
 src/kernel
+.cache
+compile_commands.json
