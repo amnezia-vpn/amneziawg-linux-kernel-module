@@ -3,6 +3,7 @@
  * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
 
+#include "compat/compat.h"
 #include "queueing.h"
 #include "timers.h"
 #include "device.h"
@@ -219,8 +220,8 @@ static unsigned int calculate_skb_padding(struct sk_buff *skb)
 	return padded_size - last_unit;
 }
 
-static bool encrypt_packet(u32 message_type, struct sk_buff *skb, struct noise_keypair *keypair,
-			   simd_context_t *simd_context)
+static bool encrypt_packet(u32 message_type, struct sk_buff *skb, struct noise_keypair *keypair
+			   COMPAT_MAYBE_SIMD_CONTEXT(simd_context_t *simd_context))
 {
 	unsigned int padding_len, plaintext_len, trailer_len;
 	struct scatterlist sg[MAX_SKB_FRAGS + 8];
@@ -276,15 +277,15 @@ static bool encrypt_packet(u32 message_type, struct sk_buff *skb, struct noise_k
 		return false;
 	return chacha20poly1305_encrypt_sg_inplace(sg, plaintext_len, NULL, 0,
 						   PACKET_CB(skb)->nonce,
-						   keypair->sending.key,
-						   simd_context);
+						   keypair->sending.key
+							COMPAT_MAYBE_SIMD_CONTEXT(simd_context));
 }
 
 void wg_packet_send_keepalive(struct wg_peer *peer)
 {
 	struct sk_buff *skb;
 
-	if (skb_queue_empty(&peer->staged_packet_queue)) {
+	if (skb_queue_empty_lockless(&peer->staged_packet_queue)) {
 		skb = alloc_skb(DATA_PACKET_HEAD_ROOM + MESSAGE_MINIMUM_LENGTH,
 				GFP_ATOMIC);
 		if (unlikely(!skb))
@@ -352,9 +353,11 @@ void wg_packet_encrypt_worker(struct work_struct *work)
 						 work)->ptr;
 	struct sk_buff *first, *skb, *next;
 	struct wg_device *wg;
-	simd_context_t simd_context;
 
+#ifdef COMPAT_CRYPTO_IS_ZINC
+	simd_context_t simd_context;
 	simd_get(&simd_context);
+#endif
 	while ((first = ptr_ring_consume_bh(&queue->ring)) != NULL) {
 		enum packet_state state = PACKET_STATE_CRYPTED;
 
@@ -364,8 +367,8 @@ void wg_packet_encrypt_worker(struct work_struct *work)
 			if (likely(encrypt_packet(PACKET_PEER(first)->advanced_security ?
 						  wg->advanced_security_config.transport_packet_magic_header : MESSAGE_DATA,
 						  skb,
-						  PACKET_CB(first)->keypair,
-						  &simd_context))) {
+						  PACKET_CB(first)->keypair
+						  COMPAT_MAYBE_SIMD_CONTEXT(&simd_context)))) {
 				wg_reset_packet(skb, true);
 			} else {
 				state = PACKET_STATE_DEAD;
@@ -374,9 +377,15 @@ void wg_packet_encrypt_worker(struct work_struct *work)
 		}
 		wg_queue_enqueue_per_peer_tx(first, state);
 
+#ifdef COMPAT_CRYPTO_IS_ZINC
 		simd_relax(&simd_context);
+#endif
+		if (need_resched())
+			cond_resched();
 	}
+#ifdef COMPAT_CRYPTO_IS_ZINC
 	simd_put(&simd_context);
+#endif
 }
 
 static void wg_packet_create_data(struct wg_peer *peer, struct sk_buff *first)
@@ -389,7 +398,7 @@ static void wg_packet_create_data(struct wg_peer *peer, struct sk_buff *first)
 		goto err;
 
 	ret = wg_queue_enqueue_per_device_and_peer(&wg->encrypt_queue, &peer->tx_queue, first,
-						   wg->packet_crypt_wq, &wg->encrypt_queue.last_cpu);
+						   wg->packet_crypt_wq);
 	if (unlikely(ret == -EPIPE))
 		wg_queue_enqueue_per_peer_tx(first, PACKET_STATE_DEAD);
 err:
@@ -404,7 +413,8 @@ err:
 void wg_packet_purge_staged_packets(struct wg_peer *peer)
 {
 	spin_lock_bh(&peer->staged_packet_queue.lock);
-	peer->device->dev->stats.tx_dropped += peer->staged_packet_queue.qlen;
+	DEV_STATS_ADD(peer->device->dev, tx_dropped,
+		      peer->staged_packet_queue.qlen);
 	__skb_queue_purge(&peer->staged_packet_queue);
 	spin_unlock_bh(&peer->staged_packet_queue.lock);
 }
