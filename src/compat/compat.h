@@ -1218,7 +1218,7 @@ static inline void dst_cache_reset_now(struct dst_cache *dst_cache)
 #define timer_delete_sync(timer) del_timer_sync(timer)
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 4)
 #include <linux/random.h>
 static inline u32 get_random_u32_below(u32 ceil)
 {
@@ -1238,7 +1238,7 @@ static inline u32 get_random_u32_inclusive(u32 floor, u32 ceil)
 #define COMPAT_GENL_HAS_RESV_START_OP
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0) && \
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 2) && \
 	!(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 296) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)) && \
 	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 229) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0)) && \
 	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 163) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)) && \
