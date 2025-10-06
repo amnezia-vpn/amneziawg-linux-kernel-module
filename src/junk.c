@@ -288,6 +288,7 @@ int jp_spec_setup(struct jp_spec *spec) {
         goto error;
     }
 
+    spec->pkt_size = 0;
     list_for_each_entry_reverse(tag, &head, head) {
         if (tag->pkt) {
             memcpy(spec->pkt + spec->pkt_size, tag->pkt, tag->pkt_size);
