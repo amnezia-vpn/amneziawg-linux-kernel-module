@@ -80,8 +80,8 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 		wg_timers_any_authenticated_packet_sent(peer);
 		atomic64_set(&peer->last_sent_handshake,
 			     ktime_get_coarse_boottime_ns());
-
-		wg_socket_send_buffer_to_peer(peer, &packet, sizeof(packet), HANDSHAKE_DSCP, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
+		wg_socket_send_buffer_to_peer(peer, &packet, sizeof(packet),
+					      HANDSHAKE_DSCP, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
 		wg_timers_handshake_initiated(peer);
 	}
 }
@@ -144,7 +144,10 @@ void wg_packet_send_handshake_response(struct wg_peer *peer)
 			wg_timers_any_authenticated_packet_sent(peer);
 			atomic64_set(&peer->last_sent_handshake,
 				     ktime_get_coarse_boottime_ns());
-			wg_socket_send_buffer_to_peer(peer, &packet, sizeof(packet), HANDSHAKE_DSCP, wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]);
+			wg_socket_send_buffer_to_peer(peer, &packet,
+						      sizeof(packet),
+						      HANDSHAKE_DSCP,
+							  wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]);
 		}
 	}
 }
@@ -157,9 +160,12 @@ void wg_packet_send_handshake_cookie(struct wg_device *wg,
 
 	net_dbg_skb_ratelimited("%s: Sending cookie response for denied handshake message for %pISpfsc\n",
 				wg->dev->name, initiating_skb);
-
-	wg_cookie_message_create(&packet, initiating_skb, sender_index, &wg->cookie_checker, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_COOKIE]));
-	wg_socket_send_buffer_as_reply_to_skb(wg, initiating_skb, &packet, sizeof(packet), wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
+	wg_cookie_message_create(&packet, initiating_skb, sender_index,
+				 &wg->cookie_checker,
+				 mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_COOKIE]));
+	wg_socket_send_buffer_as_reply_to_skb(wg, initiating_skb, &packet,
+					      sizeof(packet),
+						  wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
 }
 
 static void keep_key_fresh(struct wg_peer *peer)

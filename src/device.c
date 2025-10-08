@@ -70,9 +70,7 @@ out:
 	return ret;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int wg_pm_notification(struct notifier_block *nb, unsigned long action,
-			      void *data)
+static int wg_pm_notification(struct notifier_block *nb, unsigned long action, void *data)
 {
 	struct wg_device *wg;
 	struct wg_peer *peer;
@@ -81,7 +79,8 @@ static int wg_pm_notification(struct notifier_block *nb, unsigned long action,
 	 * its normal operation rather than as a somewhat rare event, then we
 	 * don't actually want to clear keys.
 	 */
-	if (IS_ENABLED(CONFIG_PM_AUTOSLEEP) || IS_ENABLED(CONFIG_ANDROID))
+	if (IS_ENABLED(CONFIG_PM_AUTOSLEEP) ||
+	    IS_ENABLED(CONFIG_PM_USERSPACE_AUTOSLEEP))
 		return 0;
 
 	if (action != PM_HIBERNATION_PREPARE && action != PM_SUSPEND_PREPARE)
@@ -91,7 +90,7 @@ static int wg_pm_notification(struct notifier_block *nb, unsigned long action,
 	list_for_each_entry(wg, &device_list, device_list) {
 		mutex_lock(&wg->device_update_lock);
 		list_for_each_entry(peer, &wg->peer_list, peer_list) {
-			del_timer(&peer->timer_zero_key_material);
+			timer_delete(&peer->timer_zero_key_material);
 			wg_noise_handshake_clear(&peer->handshake);
 			wg_noise_keypairs_clear(&peer->keypairs);
 		}
@@ -103,7 +102,24 @@ static int wg_pm_notification(struct notifier_block *nb, unsigned long action,
 }
 
 static struct notifier_block pm_notifier = { .notifier_call = wg_pm_notification };
-#endif
+
+static int wg_vm_notification(struct notifier_block *nb, unsigned long action, void *data)
+{
+	struct wg_device *wg;
+	struct wg_peer *peer;
+
+	rtnl_lock();
+	list_for_each_entry(wg, &device_list, device_list) {
+		mutex_lock(&wg->device_update_lock);
+		list_for_each_entry(peer, &wg->peer_list, peer_list)
+			wg_noise_expire_current_peer_keypairs(peer);
+		mutex_unlock(&wg->device_update_lock);
+	}
+	rtnl_unlock();
+	return 0;
+}
+
+static struct notifier_block vm_notifier = { .notifier_call = wg_vm_notification };
 
 static int wg_stop(struct net_device *dev)
 {
@@ -230,7 +246,9 @@ static const struct net_device_ops netdev_ops = {
 	.ndo_open		= wg_open,
 	.ndo_stop		= wg_stop,
 	.ndo_start_xmit		= wg_xmit,
+#ifndef COMPAT_CANNOT_USE_PCPU_STAT_TYPE
 	.ndo_get_stats64 = dev_get_tstats64
+#endif
 };
 
 static void wg_destruct(struct net_device *dev)
@@ -259,7 +277,9 @@ static void wg_destruct(struct net_device *dev)
 	rcu_barrier(); /* Wait for all the peers to be actually freed. */
 	wg_ratelimiter_uninit();
 	memzero_explicit(&wg->static_identity, sizeof(wg->static_identity));
+#ifdef COMPAT_CANNOT_USE_PCPU_STAT_TYPE
 	free_percpu(dev->tstats);
+#endif
 	kvfree(wg->index_hashtable);
 	kvfree(wg->peer_hashtable);
 	mutex_unlock(&wg->device_update_lock);
@@ -304,11 +324,16 @@ static void wg_setup(struct net_device *dev)
 #ifndef COMPAT_CANNOT_USE_MAX_MTU
 	dev->max_mtu = round_down(INT_MAX, MESSAGE_PADDING_MULTIPLE) - overhead;
 #endif
+#ifndef COMPAT_CANNOT_USE_PCPU_STAT_TYPE
+	dev->pcpu_stat_type = NETDEV_PCPU_STAT_TSTATS;
+#endif
 
 	SET_NETDEV_DEVTYPE(dev, &device_type);
 
 	/* We need to keep the dst around in case of icmp replies. */
 	netif_keep_dst(dev);
+
+	netif_set_tso_max_size(dev, GSO_MAX_SIZE);
 
 	memset(wg, 0, sizeof(*wg));
 	wg->dev = dev;
@@ -331,14 +356,15 @@ static void wg_setup(struct net_device *dev)
 	};
 }
 
-static int wg_newlink(struct net *src_net, struct net_device *dev,
-		      struct nlattr *tb[], struct nlattr *data[],
+static int wg_newlink(struct net_device *dev,
+		      struct rtnl_newlink_params *params,
 		      struct netlink_ext_ack *extack)
 {
+	struct net *link_net = rtnl_newlink_link_net(params);
 	struct wg_device *wg = netdev_priv(dev);
 	int ret = -ENOMEM;
 
-	rcu_assign_pointer(wg->creating_net, src_net);
+	rcu_assign_pointer(wg->creating_net, link_net);
 	init_rwsem(&wg->static_identity.lock);
 	mutex_init(&wg->socket_update_lock);
 	mutex_init(&wg->device_update_lock);
@@ -355,9 +381,11 @@ static int wg_newlink(struct net *src_net, struct net_device *dev,
 	if (!wg->index_hashtable)
 		goto err_free_peer_hashtable;
 
+#ifdef COMPAT_CANNOT_USE_PCPU_STAT_TYPE
 	dev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
 	if (!dev->tstats)
 		goto err_free_index_hashtable;
+#endif
 
 	wg->handshake_receive_wq = alloc_workqueue("wg-kex-%s",
 			WQ_CPU_INTENSIVE | WQ_FREEZABLE, 0, dev->name);
@@ -393,6 +421,7 @@ static int wg_newlink(struct net *src_net, struct net_device *dev,
 	if (ret < 0)
 		goto err_free_handshake_queue;
 
+	netif_threaded_enable(dev);
 	ret = register_netdevice(dev);
 	if (ret < 0)
 		goto err_uninit_ratelimiter;
@@ -422,19 +451,41 @@ err_destroy_handshake_send:
 err_destroy_handshake_receive:
 	destroy_workqueue(wg->handshake_receive_wq);
 err_free_tstats:
+#ifdef COMPAT_CANNOT_USE_PCPU_STAT_TYPE
 	free_percpu(dev->tstats);
 err_free_index_hashtable:
+#endif
 	kvfree(wg->index_hashtable);
 err_free_peer_hashtable:
 	kvfree(wg->peer_hashtable);
 	return ret;
 }
 
+#ifdef COMPAT_CANNOT_USE_RTNL_NEWLINK_PARAMS
+static int wg_newlink_old(struct net *src_net, struct net_device *dev,
+		      struct nlattr *tb[], struct nlattr *data[],
+		      struct netlink_ext_ack *extack)
+{
+	struct rtnl_newlink_params params = {
+		.src_net = src_net,
+		.link_net = NULL,
+		.peer_net = NULL,
+		.tb = tb,
+		.data = data,
+	};
+	return wg_newlink(dev, &params, extack);
+}
+#endif
+
 static struct rtnl_link_ops link_ops __read_mostly = {
 	.kind			= KBUILD_MODNAME,
 	.priv_size		= sizeof(struct wg_device),
 	.setup			= wg_setup,
+#ifndef COMPAT_CANNOT_USE_RTNL_NEWLINK_PARAMS
 	.newlink		= wg_newlink,
+#else
+	.newlink 		= wg_newlink_old,
+#endif
 };
 
 static void wg_netns_pre_exit(struct net *net)
@@ -466,15 +517,17 @@ int __init wg_device_init(void)
 {
 	int ret;
 
-#ifdef CONFIG_PM_SLEEP
 	ret = register_pm_notifier(&pm_notifier);
 	if (ret)
 		return ret;
-#endif
+
+	ret = register_random_vmfork_notifier(&vm_notifier);
+	if (ret)
+		goto error_pm;
 
 	ret = register_pernet_device(&pernet_ops);
 	if (ret)
-		goto error_pm;
+		goto error_vm;
 
 	ret = rtnl_link_register(&link_ops);
 	if (ret)
@@ -484,10 +537,10 @@ int __init wg_device_init(void)
 
 error_pernet:
 	unregister_pernet_device(&pernet_ops);
+error_vm:
+	unregister_random_vmfork_notifier(&vm_notifier);
 error_pm:
-#ifdef CONFIG_PM_SLEEP
 	unregister_pm_notifier(&pm_notifier);
-#endif
 	return ret;
 }
 
@@ -495,9 +548,8 @@ void wg_device_uninit(void)
 {
 	rtnl_link_unregister(&link_ops);
 	unregister_pernet_device(&pernet_ops);
-#ifdef CONFIG_PM_SLEEP
+	unregister_random_vmfork_notifier(&vm_notifier);
 	unregister_pm_notifier(&pm_notifier);
-#endif
 	rcu_barrier();
 }
 
