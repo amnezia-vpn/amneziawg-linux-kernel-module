@@ -300,9 +300,9 @@ static bool decrypt_packet(struct sk_buff *skb, struct noise_keypair *keypair,
 		return false;
 
 	if (!chacha20poly1305_decrypt_sg_inplace(sg, skb->len, NULL, 0,
-							PACKET_CB(skb)->nonce,
-						 	keypair->receiving.key
-							COMPAT_MAYBE_SIMD_CONTEXT(simd_context)))
+					         PACKET_CB(skb)->nonce,
+						 keypair->receiving.key
+					 COMPAT_MAYBE_SIMD_CONTEXT(simd_context)))
 		return false;
 
 	/* Another ugly situation of pushing and pulling the header so as to
@@ -532,6 +532,8 @@ void wg_packet_decrypt_worker(struct work_struct *work)
 				PACKET_STATE_CRYPTED : PACKET_STATE_DEAD;
 		wg_queue_enqueue_per_peer_rx(skb, state);
 		simd_relax(&simd_context);
+		if (need_resched())
+			cond_resched();
 	}
 
 	simd_put(&simd_context);
@@ -590,16 +592,16 @@ void wg_packet_receive(struct wg_device *wg, struct sk_buff *skb)
 		} else
 			ret = ptr_ring_produce_bh(&wg->handshake_queue.ring, skb);
 		if (ret) {
-drop:
+	drop:
 			net_dbg_skb_ratelimited("%s: Dropping handshake packet from %pISpfsc\n",
-			                        wg->dev->name, skb);
+						wg->dev->name, skb);
 			goto err;
 		}
 		atomic_inc(&wg->handshake_queue_len);
 		cpu = wg_cpumask_next_online(&wg->handshake_queue.last_cpu);
 		/* Queues up a call to packet_process_queued_handshake_packets(skb): */
 		queue_work_on(cpu, wg->handshake_receive_wq,
-		              &per_cpu_ptr(wg->handshake_queue.worker, cpu)->work);
+			      &per_cpu_ptr(wg->handshake_queue.worker, cpu)->work);
 	} else if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_TRANSPORT])) {
 		PACKET_CB(skb)->ds = ip_tunnel_get_dsfield(ip_hdr(skb), skb);
 		wg_packet_consume_data(wg, skb);

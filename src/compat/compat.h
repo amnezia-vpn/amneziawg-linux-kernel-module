@@ -1273,4 +1273,71 @@ static inline void dev_sw_netstats_rx_add(struct net_device *dev, unsigned int l
 }
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 91)
+#include <linux/timer.h>
+static inline int timer_delete(struct timer_list *timer)
+{
+	return del_timer(timer);
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+#define timer_container_of from_timer
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+#include <net/udp_tunnel.h>
+#define udp_tunnel_xmit_skb(a, b, c, d, e, f, g, h, i, j, k, l, m) udp_tunnel_xmit_skb(a, b, c, d, e, f, g, h, i, j, k, l)
+#define udp_tunnel6_xmit_skb(a, b, c, d, e, f, g, h, i, j, k, l, m) udp_tunnel6_xmit_skb(a, b, c, d, e, f, g, h, i, j, k, l)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+#include <linux/in6.h>
+struct sockaddr_inet {
+	unsigned short	sa_family;
+	char		sa_data[sizeof(struct sockaddr_in6) -
+				sizeof(unsigned short)];
+};
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+#include <linux/netdevice.h>
+static inline void netif_threaded_enable(struct net_device *dev) { }
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
+#undef CONFIG_PM_USERSPACE_AUTOSLEEP
+#define CONFIG_PM_USERSPACE_AUTOSLEEP CONFIG_ANDROID
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 7, 0)
+#define COMPAT_CANNOT_USE_PCPU_STAT_TYPE
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 15, 0)
+#define COMPAT_CANNOT_USE_RTNL_NEWLINK_PARAMS
+struct rtnl_newlink_params {
+	struct net *src_net;
+	struct net *link_net;
+	struct net *peer_net;
+	struct nlattr **tb;
+	struct nlattr **data;
+};
+static inline struct net *rtnl_newlink_link_net(struct rtnl_newlink_params *p)
+{
+	return p->link_net ? : p->src_net;
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)
+#include <linux/notifier.h>
+static inline int register_random_vmfork_notifier(struct notifier_block *nb) { return 0; }
+static inline int unregister_random_vmfork_notifier(struct notifier_block *nb) { return 0; }
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0)
+#include <linux/netdevice.h>
+static inline void netif_set_tso_max_size(struct net_device *dev, unsigned int size) {}
+#endif
+
 #endif /* _WG_COMPAT_H */
