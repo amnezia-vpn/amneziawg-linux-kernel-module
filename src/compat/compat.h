@@ -1128,6 +1128,7 @@ static const struct header_ops ip_tunnel_header_ops = { .parse_protocol = ip_tun
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 30)
+#define COMPAT_HAS_DEFINED_DST_CACHE_PCPU
 #include <net/dst_cache.h>
 struct dst_cache_pcpu {
 	unsigned long refresh_ts;
@@ -1138,8 +1139,11 @@ struct dst_cache_pcpu {
 		struct in6_addr in6_saddr;
 	};
 };
-#define COMPAT_HAS_DEFINED_DST_CACHE_PCPU
-#ifndef ISRHEL9
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0) && \
+    !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 84) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)) && \
+    !defined(ISRHEL9)
 static inline void dst_cache_reset_now(struct dst_cache *dst_cache)
 {
 	int i;
@@ -1157,7 +1161,6 @@ static inline void dst_cache_reset_now(struct dst_cache *dst_cache)
 		dst_release(dst);
 	}
 }
-#endif
 #endif
 
 #if defined(ISUBUNTU1604) || defined(ISRHEL7)
@@ -1204,7 +1207,8 @@ static inline void dst_cache_reset_now(struct dst_cache *dst_cache)
 #define from_timer(var, callback_timer, timer_fieldname) container_of((struct timer_list *)callback_timer, typeof(*var), timer_fieldname)
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0) && \
+    !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 121) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0))
 #include <net/flow.h>
 #define flowi4_to_flowi_common(fl4) flowi4_to_flowi(fl4)
 #define flowi6_to_flowi_common(fl4) flowi6_to_flowi(fl4)
