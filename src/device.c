@@ -473,7 +473,7 @@ static int wg_newlink_old(struct net *src_net, struct net_device *dev,
 		.tb = tb,
 		.data = data,
 	};
-	return wg_newlink(dev, &params, extack);
+	return wg_newlink(dev, &params, NULL);
 }
 #endif
 
