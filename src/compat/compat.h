@@ -538,7 +538,7 @@ static inline void *__compat_kvcalloc(size_t n, size_t size, gfp_t flags)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
-#define wg_newlink(a,b,c,d,e) wg_newlink(a,b,c,d)
+#define wg_newlink_old(a,b,c,d,e) wg_newlink_old(a,b,c,d)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0)
@@ -1297,12 +1297,6 @@ static inline int timer_delete(struct timer_list *timer)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
-#include <net/udp_tunnel.h>
-#define udp_tunnel_xmit_skb(a, b, c, d, e, f, g, h, i, j, k, l, m) udp_tunnel_xmit_skb(a, b, c, d, e, f, g, h, i, j, k, l)
-#define udp_tunnel6_xmit_skb(a, b, c, d, e, f, g, h, i, j, k, l, m) udp_tunnel6_xmit_skb(a, b, c, d, e, f, g, h, i, j, k, l)
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 #include <linux/in6.h>
 struct sockaddr_inet {
 	unsigned short	sa_family;
@@ -1349,6 +1343,48 @@ static inline int unregister_random_vmfork_notifier(struct notifier_block *nb) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0) && !defined(ISRHEL9)
 #include <linux/netdevice.h>
 static inline void netif_set_tso_max_size(struct net_device *dev, unsigned int size) {}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)
+#define __nonstring
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
+static inline bool skb_queue_empty_lockless(const struct sk_buff_head *list)
+{
+	return READ_ONCE(list->next) == (const struct sk_buff *) list;
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+#define NLA_POLICY_MASK(tp, _mask) { .type = tp }
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+static inline char *nla_strdup(const struct nlattr *nla, gfp_t flags)
+{
+	size_t srclen = nla_len(nla);
+	char *src = nla_data(nla), *dst;
+
+	if (srclen > 0 && src[srclen - 1] == '\0')
+		srclen--;
+
+	dst = kmalloc(srclen + 1, flags);
+	if (dst != NULL) {
+		memcpy(dst, src, srclen);
+		dst[srclen] = '\0';
+	}
+	return dst;
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
+#include <linux/time.h>
+#define ktime_get_real_seconds get_seconds
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
+#include <asm/unaligned.h>
 #endif
 
 #endif /* _WG_COMPAT_H */
