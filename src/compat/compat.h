@@ -29,6 +29,8 @@
 #define ISUBUNTU1904
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
 #define ISUBUNTU1910
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
+#define ISUBUNTU2204
 #endif
 #endif
 
@@ -1142,6 +1144,7 @@ struct dst_cache_pcpu {
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0) && \
+    !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 7) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)) && \
     !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 84) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)) && \
     !defined(ISRHEL9)
 static inline void dst_cache_reset_now(struct dst_cache *dst_cache)
@@ -1281,7 +1284,7 @@ static inline void dev_sw_netstats_rx_add(struct net_device *dev, unsigned int l
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 91) && !defined(ISRHEL9)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 91) && !defined(ISUBUNTU2204) && !defined(ISRHEL9)
 #include <linux/timer.h>
 static inline int timer_delete(struct timer_list *timer)
 {
