@@ -994,8 +994,10 @@ __ro_after_init = {
 	.policy = device_policy,
 #endif
 	.netnsok = true,
+#ifndef COMPAT_CANNOT_USE_NETLINK_MCGRPS
 	.mcgrps = wg_genl_mcgrps,
 	.n_mcgrps = ARRAY_SIZE(wg_genl_mcgrps)
+#endif
 };
 
 int __init wg_genetlink_init(void)

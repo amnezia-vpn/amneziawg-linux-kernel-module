@@ -1273,6 +1273,8 @@ static inline u32 get_random_u32_inclusive(u32 floor, u32 ceil)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 6, 0)
+#include <linux/if.h>
+#include <linux/if_tunnel.h>
 static inline void dev_sw_netstats_rx_add(struct net_device *dev, unsigned int len) {
 	struct pcpu_sw_netstats *tstats = get_cpu_ptr(dev->tstats);
 
@@ -1385,6 +1387,14 @@ static inline char *nla_strdup(const struct nlattr *nla, gfp_t flags)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 #include <asm/unaligned.h>
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
+#define genlmsg_multicast_netns(a, b, c, d, e, f) genlmsg_multicast_netns(b, c, d, e, f)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
+#define COMPAT_CANNOT_USE_NETLINK_MCGRPS
 #endif
 
 #endif /* _WG_COMPAT_H */
