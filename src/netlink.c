@@ -6,6 +6,7 @@
 #include "netlink.h"
 #include "device.h"
 #include "magic_header.h"
+#include "obf.h"
 #include "peer.h"
 #include "socket.h"
 #include "queueing.h"
@@ -58,7 +59,11 @@ static const struct nla_policy device_policy[WGDEVICE_A_MAX + 1] = {
 	[WGDEVICE_A_I2]		= { .type = NLA_NUL_STRING },
 	[WGDEVICE_A_I3]		= { .type = NLA_NUL_STRING },
 	[WGDEVICE_A_I4]		= { .type = NLA_NUL_STRING },
-	[WGDEVICE_A_I5]		= { .type = NLA_NUL_STRING }
+	[WGDEVICE_A_I5]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_DI]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_DR]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_DC]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_DT]		= { .type = NLA_NUL_STRING },
 };
 
 static const struct nla_policy peer_policy[WGPEER_A_MAX + 1] = {
@@ -293,11 +298,9 @@ get_peer(struct wg_peer *peer, struct sk_buff *skb, struct dump_ctx *ctx)
 	if (fail)
 		goto err;
 
-	if (peer->advanced_security) {
-		fail = nla_put_flag(skb, WGPEER_A_ADVANCED_SECURITY);
-		if (fail)
-			goto err;
-	}
+	fail = nla_put_flag(skb, WGPEER_A_ADVANCED_SECURITY);
+	if (fail)
+		goto err;
 
 	down_read(&peer->handshake.lock);
 	fail = nla_put(skb, WGPEER_A_PUBLIC_KEY, NOISE_PUBLIC_KEY_LEN,
@@ -418,6 +421,7 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 	bool done = true;
 	void *hdr;
 	char buf[32];
+	char* str;
 
 	rtnl_lock();
 	mutex_lock(&wg->device_update_lock);
@@ -439,29 +443,82 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 		    nla_put_u16(skb, WGDEVICE_A_JC, wg->jc) ||
 		    nla_put_u16(skb, WGDEVICE_A_JMIN, wg->jmin) ||
 		    nla_put_u16(skb, WGDEVICE_A_JMAX, wg->jmax) ||
-		    nla_put_u16(skb, WGDEVICE_A_S1, wg->junk_size[MSGIDX_HANDSHAKE_INIT]) ||
-		    nla_put_u16(skb, WGDEVICE_A_S2,wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]) ||
-		    (mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_INIT], buf, sizeof(buf)) &&
+		    nla_put_u16(skb, WGDEVICE_A_S1, wg->padding_handshake_init) ||
+		    nla_put_u16(skb, WGDEVICE_A_S2,wg->padding_handshake_resp) ||
+		    (mh_genspec(&wg->hdr_handshake_init, buf, sizeof(buf)) &&
 				nla_put_string(skb, WGDEVICE_A_H1, buf)) ||
-			(mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE], buf, sizeof(buf)) &&
+			(mh_genspec(&wg->hdr_handshake_resp, buf, sizeof(buf)) &&
 				nla_put_string(skb, WGDEVICE_A_H2, buf)) ||
-			(mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_COOKIE], buf, sizeof(buf)) &&
+			(mh_genspec(&wg->hdr_handshake_cookie, buf, sizeof(buf)) &&
 				nla_put_string(skb, WGDEVICE_A_H3, buf)) ||
-			(mh_genspec(&wg->headers[MSGIDX_TRANSPORT], buf, sizeof(buf)) &&
+			(mh_genspec(&wg->hdr_transport, buf, sizeof(buf)) &&
 				nla_put_string(skb, WGDEVICE_A_H4, buf)) ||
-			nla_put_u16(skb, WGDEVICE_A_S3, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]) ||
-			nla_put_u16(skb, WGDEVICE_A_S4, wg->junk_size[MSGIDX_TRANSPORT]) ||
-			(wg->ispecs[0].desc &&
-				nla_put_string(skb, WGDEVICE_A_I1, wg->ispecs[0].desc)) ||
-			(wg->ispecs[1].desc &&
-				nla_put_string(skb, WGDEVICE_A_I2, wg->ispecs[1].desc)) ||
-			(wg->ispecs[2].desc &&
-				nla_put_string(skb, WGDEVICE_A_I3, wg->ispecs[2].desc)) ||
-			(wg->ispecs[3].desc &&
-				nla_put_string(skb, WGDEVICE_A_I4, wg->ispecs[3].desc)) ||
-			(wg->ispecs[4].desc &&
-				nla_put_string(skb, WGDEVICE_A_I5, wg->ispecs[4].desc)))
+			nla_put_u16(skb, WGDEVICE_A_S3, wg->padding_handshake_cookie) ||
+			nla_put_u16(skb, WGDEVICE_A_S4, wg->padding_transport))
 			goto out;
+
+		if ((str = obf_chain_genspec(&wg->ipacket[0]))) {
+			ret = nla_put_string(skb, WGDEVICE_A_I1, str);
+			kfree(str);
+			if (ret)
+				goto out;
+		}
+
+		if ((str = obf_chain_genspec(&wg->ipacket[1]))) {
+			ret = nla_put_string(skb, WGDEVICE_A_I2, str);
+			kfree(str);
+			if (ret)
+				goto out;
+		}
+
+		if ((str = obf_chain_genspec(&wg->ipacket[2]))) {
+			ret = nla_put_string(skb, WGDEVICE_A_I3, str);
+			kfree(str);
+			if (ret)
+				goto out;
+		}
+
+		if ((str = obf_chain_genspec(&wg->ipacket[3]))) {
+			ret = nla_put_string(skb, WGDEVICE_A_I4, str);
+			kfree(str);
+			if (ret)
+				goto out;
+		}
+
+		if ((str = obf_chain_genspec(&wg->ipacket[4]))) {
+			ret = nla_put_string(skb, WGDEVICE_A_I5, str);
+			kfree(str);
+			if (ret)
+				goto out;
+		}
+
+		if ((str = obf_chain_genspec(&wg->fmt_handshake_init))) {
+			ret = nla_put_string(skb, WGDEVICE_A_DI, str);
+			kfree(str);
+			if (ret)
+				goto out;
+		}
+
+		if ((str = obf_chain_genspec(&wg->fmt_handshake_resp))) {
+			ret = nla_put_string(skb, WGDEVICE_A_DR, str);
+			kfree(str);
+			if (ret)
+				goto out;
+		}
+
+		if ((str = obf_chain_genspec(&wg->fmt_handshake_cookie))) {
+			ret = nla_put_string(skb, WGDEVICE_A_DC, str);
+			kfree(str);
+			if (ret)
+				goto out;
+		}
+
+		if ((str = obf_chain_genspec(&wg->fmt_transport))) {
+			ret = nla_put_string(skb, WGDEVICE_A_DT, str);
+			kfree(str);
+			if (ret)
+				goto out;
+		}
 
 		down_read(&wg->static_identity.lock);
 		if (wg->static_identity.has_identity) {
@@ -715,11 +772,6 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 			wg_packet_send_keepalive(peer);
 	}
 
-	if (flags & WGPEER_F_HAS_ADVANCED_SECURITY) {
-		peer->advanced_security = wg->advanced_security &&
-				nla_get_flag(attrs[WGPEER_A_ADVANCED_SECURITY]);
-	}
-
 	if (netif_running(wg->dev))
 		wg_packet_send_staged_packets(peer);
 
@@ -777,99 +829,135 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[WGDEVICE_A_JC]) {
-		wg->advanced_security = true;
 		wg->jc = nla_get_u16(info->attrs[WGDEVICE_A_JC]);
 	}
 
 	if (info->attrs[WGDEVICE_A_JMIN]) {
-		wg->advanced_security = true;
 		wg->jmin = nla_get_u16(info->attrs[WGDEVICE_A_JMIN]);
 	}
 
 	if (info->attrs[WGDEVICE_A_JMAX]) {
-		wg->advanced_security = true;
 		wg->jmax = nla_get_u16(info->attrs[WGDEVICE_A_JMAX]);
 	}
 
 	if (info->attrs[WGDEVICE_A_S1]) {
-		wg->advanced_security = true;
-		wg->junk_size[MSGIDX_HANDSHAKE_INIT] = nla_get_u16(info->attrs[WGDEVICE_A_S1]);
+		wg->padding_handshake_init = nla_get_u16(info->attrs[WGDEVICE_A_S1]);
 	}
 
 	if (info->attrs[WGDEVICE_A_S2]) {
-		wg->advanced_security = true;
-		wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE] = nla_get_u16(info->attrs[WGDEVICE_A_S2]);
+		wg->padding_handshake_resp = nla_get_u16(info->attrs[WGDEVICE_A_S2]);
 	}
 
 	if (info->attrs[WGDEVICE_A_H1]) {
-		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H1], GFP_KERNEL);
-		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_INIT], str);
+		ret = mh_parse(&wg->hdr_handshake_init, str);
 		kfree(str);
 		if (ret)
 			goto out;
 	}
 
 	if (info->attrs[WGDEVICE_A_H2]) {
-		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H2], GFP_KERNEL);
-		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE], str);
+		ret = mh_parse(&wg->hdr_handshake_resp, str);
 		kfree(str);
 		if (ret)
 			goto out;
 	}
 
 	if (info->attrs[WGDEVICE_A_H3]) {
-		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H3], GFP_KERNEL);
-		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_COOKIE], str);
+		ret = mh_parse(&wg->hdr_handshake_cookie, str);
 		kfree(str);
 		if (ret)
 			goto out;
 	}
 
 	if (info->attrs[WGDEVICE_A_H4]) {
-		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H4], GFP_KERNEL);
-		ret = mh_parse(&wg->headers[MSGIDX_TRANSPORT], str);
+		ret = mh_parse(&wg->hdr_transport, str);
 		kfree(str);
 		if (ret)
 			goto out;
 	}
 
 	if (info->attrs[WGDEVICE_A_S3]) {
-		wg->advanced_security = true;
-		wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] = nla_get_u16(info->attrs[WGDEVICE_A_S3]);
+		wg->padding_handshake_cookie = nla_get_u16(info->attrs[WGDEVICE_A_S3]);
 	}
 
 	if (info->attrs[WGDEVICE_A_S4]) {
-		wg->advanced_security = true;
-		wg->junk_size[MSGIDX_TRANSPORT] = nla_get_u16(info->attrs[WGDEVICE_A_S4]);
+		wg->padding_transport = nla_get_u16(info->attrs[WGDEVICE_A_S4]);
 	}
 
 	if (info->attrs[WGDEVICE_A_I1]) {
-		wg->advanced_security = true;
-		wg->ispecs[0].desc = nla_strdup(info->attrs[WGDEVICE_A_I1], GFP_KERNEL);
+		str = nla_strdup(info->attrs[WGDEVICE_A_I1], GFP_KERNEL);
+		ret = obf_chain_setup(&wg->ipacket[0], str);
+		kfree(str);
+		if (ret)
+			goto out;
 	}
 
 	if (info->attrs[WGDEVICE_A_I2]) {
-		wg->advanced_security = true;
-		wg->ispecs[1].desc = nla_strdup(info->attrs[WGDEVICE_A_I2], GFP_KERNEL);
+		str = nla_strdup(info->attrs[WGDEVICE_A_I2], GFP_KERNEL);
+		ret = obf_chain_setup(&wg->ipacket[1], str);
+		kfree(str);
+		if (ret)
+			goto out;
 	}
 
 	if (info->attrs[WGDEVICE_A_I3]) {
-		wg->advanced_security = true;
-		wg->ispecs[2].desc = nla_strdup(info->attrs[WGDEVICE_A_I3], GFP_KERNEL);
+		str = nla_strdup(info->attrs[WGDEVICE_A_I3], GFP_KERNEL);
+		ret = obf_chain_setup(&wg->ipacket[2], str);
+		kfree(str);
+		if (ret)
+			goto out;
 	}
 
 	if (info->attrs[WGDEVICE_A_I4]) {
-		wg->advanced_security = true;
-		wg->ispecs[3].desc = nla_strdup(info->attrs[WGDEVICE_A_I4], GFP_KERNEL);
+		str = nla_strdup(info->attrs[WGDEVICE_A_I4], GFP_KERNEL);
+		ret = obf_chain_setup(&wg->ipacket[3], str);
+		kfree(str);
+		if (ret)
+			goto out;
 	}
 
 	if (info->attrs[WGDEVICE_A_I5]) {
-		wg->advanced_security = true;
-		wg->ispecs[4].desc = nla_strdup(info->attrs[WGDEVICE_A_I5], GFP_KERNEL);
+		str = nla_strdup(info->attrs[WGDEVICE_A_I5], GFP_KERNEL);
+		ret = obf_chain_setup(&wg->ipacket[4], str);
+		kfree(str);
+		if (ret)
+			goto out;
+	}
+
+	if (info->attrs[WGDEVICE_A_DI]) {
+		str = nla_strdup(info->attrs[WGDEVICE_A_DI], GFP_KERNEL);
+		ret = obf_chain_setup(&wg->fmt_handshake_init, str);
+		kfree(str);
+		if (ret)
+			goto out;
+	}
+
+	if (info->attrs[WGDEVICE_A_DR]) {
+		str = nla_strdup(info->attrs[WGDEVICE_A_DR], GFP_KERNEL);
+		ret = obf_chain_setup(&wg->fmt_handshake_resp, str);
+		kfree(str);
+		if (ret)
+			goto out;
+	}
+
+	if (info->attrs[WGDEVICE_A_DC]) {
+		str = nla_strdup(info->attrs[WGDEVICE_A_DC], GFP_KERNEL);
+		ret = obf_chain_setup(&wg->fmt_handshake_cookie, str);
+		kfree(str);
+		if (ret)
+			goto out;
+	}
+
+	if (info->attrs[WGDEVICE_A_DT]) {
+		str = nla_strdup(info->attrs[WGDEVICE_A_DT], GFP_KERNEL);
+		ret = obf_chain_setup(&wg->fmt_transport, str);
+		kfree(str);
+		if (ret)
+			goto out;
 	}
 
 	if (flags & WGDEVICE_F_REPLACE_PEERS)
@@ -1009,7 +1097,7 @@ void __exit wg_genetlink_uninit(void)
 }
 
 int wg_genl_mcast_peer_unknown(struct wg_device *wg, const u8 pubkey[NOISE_PUBLIC_KEY_LEN],
-	                           struct endpoint *endpoint, bool advanced_security)
+	                           struct endpoint *endpoint)
 {
 	struct sk_buff *skb;
 	struct nlattr *peer_nest;
@@ -1050,11 +1138,9 @@ int wg_genl_mcast_peer_unknown(struct wg_device *wg, const u8 pubkey[NOISE_PUBLI
 	if (ret)
 		goto err;
 
-	if (advanced_security) {
-		ret = nla_put_flag(skb, WGPEER_A_ADVANCED_SECURITY);
-		if (ret)
-			goto err;
-	}
+	ret = nla_put_flag(skb, WGPEER_A_ADVANCED_SECURITY);
+	if (ret)
+		goto err;
 
 	nla_nest_end(skb, peer_nest);
 

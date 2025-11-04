@@ -4,6 +4,8 @@
  */
 
 #include "device.h"
+#include "encode.h"
+#include "obf.h"
 #include "peer.h"
 #include "socket.h"
 #include "queueing.h"
@@ -187,30 +189,28 @@ int wg_socket_send_skb_to_peer(struct wg_peer *peer, struct sk_buff *skb, u8 ds)
 }
 
 int wg_socket_send_buffer_to_peer(struct wg_peer *peer, void *buffer,
-				  size_t len, u8 ds, size_t junk_size)
+				  size_t len, u8 ds, u16 padding, struct obf_chain *chain)
 {
-	void* junk;
-	struct sk_buff *skb = alloc_skb(len + junk_size + SKB_HEADER_LEN, GFP_ATOMIC);
+	struct sk_buff *skb = alloc_skb(len + SKB_HEADER_LEN, GFP_ATOMIC);
 
 	if (unlikely(!skb))
 		return -ENOMEM;
 
 	skb_reserve(skb, SKB_HEADER_LEN);
 	skb_set_inner_network_header(skb, 0);
-	junk = skb_put(skb, junk_size);
-	get_random_bytes(junk, junk_size);
 	skb_put_data(skb, buffer, len);
+	if (unlikely(awg_encode_skb(skb, padding, chain)))
+		return -ENOMEM;
 	return wg_socket_send_skb_to_peer(peer, skb, ds);
 }
 
 int wg_socket_send_buffer_as_reply_to_skb(struct wg_device *wg,
 					  struct sk_buff *in_skb, void *buffer,
-					  size_t len, size_t junk_size)
+					  size_t len, u16 padding, struct obf_chain *chain)
 {
 	int ret = 0;
 	struct sk_buff *skb;
 	struct endpoint endpoint;
-	void* junk;
 
 	if (unlikely(!in_skb))
 		return -EINVAL;
@@ -218,14 +218,14 @@ int wg_socket_send_buffer_as_reply_to_skb(struct wg_device *wg,
 	if (unlikely(ret < 0))
 		return ret;
 
-	skb = alloc_skb(len + junk_size + SKB_HEADER_LEN, GFP_ATOMIC);
+	skb = alloc_skb(len + SKB_HEADER_LEN, GFP_ATOMIC);
 	if (unlikely(!skb))
 		return -ENOMEM;
 	skb_reserve(skb, SKB_HEADER_LEN);
 	skb_set_inner_network_header(skb, 0);
-	junk = skb_put(skb, junk_size);
-	get_random_bytes(junk, junk_size);
 	skb_put_data(skb, buffer, len);
+	if (unlikely(awg_encode_skb(skb, padding, chain)))
+		return -ENOMEM;
 
 	if (endpoint.addr.sa_family == AF_INET)
 		ret = send4(wg, skb, &endpoint, 0, NULL);

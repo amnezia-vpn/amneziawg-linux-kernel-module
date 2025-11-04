@@ -3,7 +3,7 @@
  * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
 
-#include "junk.h"
+#include "obf.h"
 #include "queueing.h"
 #include "socket.h"
 #include "timers.h"
@@ -256,8 +256,12 @@ static void wg_destruct(struct net_device *dev)
 	struct wg_device *wg = netdev_priv(dev);
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i)
-		jp_spec_free(&wg->ispecs[i]);
+	for (i = 0; i < ARRAY_SIZE(wg->ipacket); ++i)
+		obf_chain_free(&wg->ipacket[i]);
+	obf_chain_free(&wg->fmt_handshake_init);
+	obf_chain_free(&wg->fmt_handshake_resp);
+	obf_chain_free(&wg->fmt_handshake_cookie);
+	obf_chain_free(&wg->fmt_transport);
 
 	rtnl_lock();
 	list_del(&wg->device_list);
@@ -338,19 +342,19 @@ static void wg_setup(struct net_device *dev)
 	memset(wg, 0, sizeof(*wg));
 	wg->dev = dev;
 
-	wg->headers[MSGIDX_HANDSHAKE_INIT] = (struct magic_header) {
+	wg->hdr_handshake_init = (struct magic_header) {
 		.start = MESSAGE_HANDSHAKE_INITIATION,
 		.end = MESSAGE_HANDSHAKE_INITIATION
 	};
-	wg->headers[MSGIDX_HANDSHAKE_RESPONSE] = (struct magic_header) {
+	wg->hdr_handshake_resp = (struct magic_header) {
 		.start = MESSAGE_HANDSHAKE_RESPONSE,
 		.end = MESSAGE_HANDSHAKE_RESPONSE
 	};
-	wg->headers[MSGIDX_HANDSHAKE_COOKIE] = (struct magic_header) {
+	wg->hdr_handshake_cookie = (struct magic_header) {
 		.start = MESSAGE_HANDSHAKE_COOKIE,
 		.end = MESSAGE_HANDSHAKE_COOKIE
 	};
-	wg->headers[MSGIDX_TRANSPORT] = (struct magic_header) {
+	wg->hdr_transport = (struct magic_header) {
 		.start = MESSAGE_DATA,
 		.end = MESSAGE_DATA
 	};
@@ -555,12 +559,6 @@ void wg_device_uninit(void)
 
 int wg_device_handle_post_config(struct wg_device *wg)
 {
-	int err;
-	int i, j;
-
-	if (!wg->advanced_security)
-		return 0;
-
 	if (wg->jc < 0) {
 		net_dbg_ratelimited("%s: JunkPacketCount should be non negative\n", wg->dev->name);
 		return -EINVAL;
@@ -579,44 +577,6 @@ int wg_device_handle_post_config(struct wg_device *wg)
 		net_dbg_ratelimited("%s: maxSize: %d; should be greater than minSize: %d\n",
 							wg->dev->name, wg->jmax, wg->jmin);
 		return -EINVAL;
-	}
-
-	if (wg->junk_size[MSGIDX_HANDSHAKE_INIT] + MESSAGE_INITIATION_SIZE > MESSAGE_MAX_SIZE) {
-		net_dbg_ratelimited("%s: S1 is too large\n", wg->dev->name);
-		return -EINVAL;
-	}
-
-	if (wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE] + MESSAGE_RESPONSE_SIZE > MESSAGE_MAX_SIZE) {
-		net_dbg_ratelimited("%s: S2 is too large\n", wg->dev->name);
-		return -EINVAL;
-	}
-
-	if (wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] + MESSAGE_COOKIE_REPLY_SIZE > MESSAGE_MAX_SIZE) {
-		net_dbg_ratelimited("%s: S3 is too large\n", wg->dev->name);
-		return -EINVAL;
-	}
-
-	if (wg->junk_size[MSGIDX_TRANSPORT] + MESSAGE_TRANSPORT_SIZE > MESSAGE_MAX_SIZE) {
-		net_dbg_ratelimited("%s: S4 is too large\n", wg->dev->name);
-		return -EINVAL;
-	}
-
-	for (i = 0; i < ARRAY_SIZE(wg->headers); ++i) {
-		for (j = i + 1; j < ARRAY_SIZE(wg->headers); ++j) {
-			if (!(wg->headers[j].end < wg->headers[i].start ||
-				  wg->headers[i].end < wg->headers[j].start)) {
-				net_dbg_ratelimited("%s: H%d and H%d ranges must not overlap\n", wg->dev->name, i + 1, j + 1);
-				return -EINVAL;
-			}
-		}
-	}
-
-	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i) {
-		err = jp_spec_setup(&wg->ispecs[i]);
-		if (err) {
-			net_dbg_ratelimited("%s: I%d-packet invalid format\n", wg->dev->name, i + 1);
-			return err;
-		}
 	}
 
 	return 0;

@@ -65,7 +65,6 @@ struct wg_peer {
 	struct napi_struct napi;
 	u64 internal_id;
 	atomic_t jp_packet_counter;
-	bool advanced_security;
 };
 
 struct wg_peer *wg_peer_create(struct wg_device *wg,

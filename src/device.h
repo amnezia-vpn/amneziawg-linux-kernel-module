@@ -6,9 +6,9 @@
 #ifndef _WG_DEVICE_H
 #define _WG_DEVICE_H
 
-#include "junk.h"
 #include "noise.h"
 #include "allowedips.h"
+#include "obf.h"
 #include "peerlookup.h"
 #include "cookie.h"
 #include "magic_header.h"
@@ -57,13 +57,23 @@ struct wg_device {
 	u32 fwmark;
 	u16 incoming_port;
 
-	struct jp_spec ispecs[5];
-	struct magic_header headers[4];
-	u16 junk_size[4];
+	struct obf_chain ipacket[5];
+	struct magic_header hdr_handshake_init;
+	struct magic_header hdr_handshake_resp;
+	struct magic_header hdr_handshake_cookie;
+	struct magic_header hdr_transport;
+	u16 padding_handshake_init;
+	u16 padding_handshake_resp;
+	u16 padding_handshake_cookie;
+	u16 padding_transport;
 	u16 jc;
 	u16 jmin;
 	u16 jmax;
-	bool advanced_security;
+
+	struct obf_chain fmt_handshake_init;
+	struct obf_chain fmt_handshake_resp;
+	struct obf_chain fmt_handshake_cookie;
+	struct obf_chain fmt_transport;
 };
 
 int wg_device_init(void);
