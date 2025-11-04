@@ -10,26 +10,31 @@ struct bytes_obf {
     u8 buf[];
 };
 
-static void bytes_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static void bytes_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     struct bytes_obf* obf = ctx;
     memcpy(dst, obf->buf, obf->len);
 }
 
-static bool bytes_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static bool bytes_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     struct bytes_obf* obf = ctx;
     return 0 == memcmp(src, obf->buf, obf->len);
 }
 
-static int bytes_obf_encoded_len(void *ctx, int decoded_len) {
+static int bytes_obf_encoded_len(void *ctx, int decoded_len)
+{
     struct bytes_obf* obf = ctx;
     return obf->len;
 }
 
-static int bytes_obf_decoded_len(void *ctx, int encoded_len) {
+static int bytes_obf_decoded_len(void *ctx, int encoded_len)
+{
     return 0;
 }
 
-static int bytes_obf_genspec(void *ctx, char* buf) {
+static int bytes_obf_genspec(void *ctx, char* buf)
+{
     struct bytes_obf* obf = ctx;
     int i;
 
@@ -43,7 +48,8 @@ static int bytes_obf_genspec(void *ctx, char* buf) {
     return 5 + obf->len * 2 + 1;
 }
 
-static void bytes_obf_destroy(void* ctx) {
+static void bytes_obf_destroy(void* ctx)
+{
     kfree(ctx);
 }
 
@@ -56,7 +62,8 @@ static const struct obf_ops bytes_obf_ops = {
     .destroy = bytes_obf_destroy,
 };
 
-static int bytes_obf_setup(struct obf* obf, char* val) {
+static int bytes_obf_setup(struct obf* obf, char* val)
+{
     int len, i, err;
     struct bytes_obf* priv;
 
@@ -96,25 +103,30 @@ priv_error:
     return err;
 }
 
-static void timestamp_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static void timestamp_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     u32 time = (u32)ktime_get_real_seconds();
     time = htonl(time);
     memcpy(dst, &time, sizeof(time));
 }
 
-static bool timestamp_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static bool timestamp_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     return true;
 }
 
-static int timestamp_obf_encoded_len(void *ctx, int decoded_len) {
+static int timestamp_obf_encoded_len(void *ctx, int decoded_len)
+{
     return 4;
 }
 
-static int timestamp_obf_decoded_len(void *ctx, int encoded_len) {
+static int timestamp_obf_decoded_len(void *ctx, int encoded_len)
+{
     return 0;
 }
 
-static int timestamp_obf_genspec(void *ctx, char* buf) {
+static int timestamp_obf_genspec(void *ctx, char* buf)
+{
     return !buf ? 3 : sprintf(buf, "<t>");
 }
 
@@ -127,7 +139,8 @@ static const struct obf_ops timestamp_obf_ops = {
     .destroy = NULL,
 };
 
-static int timestamp_obf_setup(struct obf* obf, char *val) {
+static int timestamp_obf_setup(struct obf* obf, char *val)
+{
     if (val)
         return -EINVAL;
 
@@ -137,23 +150,28 @@ static int timestamp_obf_setup(struct obf* obf, char *val) {
     return 0;
 }
 
-static void rand_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static void rand_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     get_random_bytes(dst, nDst);
 }
 
-static bool rand_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static bool rand_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     return true;
 }
 
-static int rand_obf_encoded_len(void *ctx, int decoded_len) {
+static int rand_obf_encoded_len(void *ctx, int decoded_len)
+{
     return (uintptr_t)ctx;
 }
 
-static int rand_obf_decoded_len(void *ctx, int encoded_len) {
+static int rand_obf_decoded_len(void *ctx, int encoded_len)
+{
     return 0;
 }
 
-static int rand_obf_genspec(void *ctx, char *buf) {
+static int rand_obf_genspec(void *ctx, char *buf)
+{
     int len = (uintptr_t)ctx;
     return !buf ? 4 + 11 : sprintf(buf, "<r %d>", len);
 }
@@ -166,7 +184,8 @@ static const struct obf_ops rand_obf_ops = {
     .genspec = rand_obf_genspec,
 };
 
-static int rand_obf_setup(struct obf* obf, char *val) {
+static int rand_obf_setup(struct obf* obf, char *val)
+{
     int len;
 
     if (!val || 0 > kstrtoint(val, 10, &len) || len <= 0)
@@ -181,7 +200,8 @@ static int rand_obf_setup(struct obf* obf, char *val) {
 #define ALPHABET_LEN 26
 #define LETTER_LEN (ALPHABET_LEN * 2)
 
-static void randchar_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static void randchar_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     u8 *dst8 = dst;
     int i;
     u8 byte;
@@ -192,7 +212,8 @@ static void randchar_obf_encode(void *ctx, void *dst, int nDst, void *src, int n
     }
 }
 
-static bool randchar_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static bool randchar_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     u8 *src8 = src;
     int i;
     u8 byte;
@@ -206,15 +227,18 @@ static bool randchar_obf_decode(void *ctx, void *dst, int nDst, void *src, int n
     return true;
 }
 
-static int randchar_obf_encoded_len(void *ctx, int decoded_len) {
+static int randchar_obf_encoded_len(void *ctx, int decoded_len)
+{
     return (uintptr_t)ctx;
 }
 
-static int randchar_obf_decoded_len(void *ctx, int encoded_len) {
+static int randchar_obf_decoded_len(void *ctx, int encoded_len)
+{
     return 0;
 }
 
-static int randchar_obf_genspec(void *ctx, char *buf) {
+static int randchar_obf_genspec(void *ctx, char *buf)
+{
     int len = (uintptr_t)ctx;
     return !buf ? 5 + 11 : sprintf(buf, "<rc %d>", len);
 }
@@ -227,7 +251,8 @@ static const struct obf_ops randchar_obf_ops = {
     .genspec = randchar_obf_genspec,
 };
 
-static int randchar_obf_setup(struct obf* obf, char *val) {
+static int randchar_obf_setup(struct obf* obf, char *val)
+{
     int len;
 
     if (!val || 0 > kstrtoint(val, 10, &len) || len <= 0)
@@ -241,7 +266,8 @@ static int randchar_obf_setup(struct obf* obf, char *val) {
 
 #define DIGIT_LEN 10
 
-static void randdigit_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static void randdigit_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     u8 *dst8 = dst;
     int i;
 
@@ -249,7 +275,8 @@ static void randdigit_obf_encode(void *ctx, void *dst, int nDst, void *src, int 
         dst8[i] = '0' + get_random_u32() % DIGIT_LEN;
 }
 
-static bool randdigit_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static bool randdigit_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     u8 *src8 = src;
     int i;
     u8 byte;
@@ -263,15 +290,18 @@ static bool randdigit_obf_decode(void *ctx, void *dst, int nDst, void *src, int 
     return true;
 }
 
-static int randdigit_obf_encoded_len(void *ctx, int decoded_len) {
+static int randdigit_obf_encoded_len(void *ctx, int decoded_len)
+{
     return (uintptr_t)ctx;
 }
 
-static int randdigit_obf_decoded_len(void *ctx, int encoded_len) {
+static int randdigit_obf_decoded_len(void *ctx, int encoded_len)
+{
     return 0;
 }
 
-static int randdigit_obf_genspec(void *ctx, char *buf) {
+static int randdigit_obf_genspec(void *ctx, char *buf)
+{
     int len = (uintptr_t)ctx;
     return !buf ? 5 + 11 : sprintf(buf, "<rd %d>", len);
 }
@@ -284,7 +314,8 @@ static const struct obf_ops randdigit_obf_ops = {
     .genspec = randdigit_obf_genspec,
 };
 
-static int randdigit_obf_setup(struct obf* obf, char *val) {
+static int randdigit_obf_setup(struct obf* obf, char *val)
+{
     int len;
 
     if (!val || 0 > kstrtoint(val, 10, &len) || len <= 0)
@@ -296,28 +327,30 @@ static int randdigit_obf_setup(struct obf* obf, char *val) {
     return 0;
 }
 
-static void data_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static void data_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     memcpy(dst, src, nSrc);
 }
 
-static bool data_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static bool data_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     memcpy(dst, src, nSrc);
     return true;
 }
 
-static int data_obf_encoded_len(void *ctx, int decoded_len) {
+static int data_obf_encoded_len(void *ctx, int decoded_len)
+{
     return decoded_len;
 }
 
-static int data_obf_decoded_len(void *ctx, int encoded_len) {
+static int data_obf_decoded_len(void *ctx, int encoded_len)
+{
     return encoded_len;
 }
 
-static int data_obf_genspec(void *ctx, char *buf) {
-    if (buf)
-        sprintf(buf, "<d>");
-
-    return 3;
+static int data_obf_genspec(void *ctx, char *buf)
+{
+    return !buf ? 3 : sprintf(buf, "<d>");
 }
 
 static const struct obf_ops data_obf_ops = {
@@ -328,7 +361,8 @@ static const struct obf_ops data_obf_ops = {
     .genspec = data_obf_genspec,
 };
 
-static int data_obf_setup(struct obf* obf, char *val) {
+static int data_obf_setup(struct obf* obf, char *val)
+{
     if (val)
         return -EINVAL;
 
@@ -338,7 +372,8 @@ static int data_obf_setup(struct obf* obf, char *val) {
     return 0;
 }
 
-static void datasize_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static void datasize_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     u8 *dst8 = dst;
     int i;
 
@@ -348,19 +383,23 @@ static void datasize_obf_encode(void *ctx, void *dst, int nDst, void *src, int n
     }
 }
 
-static bool datasize_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc) {
+static bool datasize_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
     return true;
 }
 
-static int datasize_obf_encoded_len(void *ctx, int decoded_len) {
+static int datasize_obf_encoded_len(void *ctx, int decoded_len)
+{
     return (uintptr_t)ctx;
 }
 
-static int datasize_obf_decoded_len(void *ctx, int encoded_len) {
+static int datasize_obf_decoded_len(void *ctx, int encoded_len)
+{
     return 0;
 }
 
-static int datasize_obf_genspec(void *ctx, char *buf) {
+static int datasize_obf_genspec(void *ctx, char *buf)
+{
     int len = (uintptr_t)ctx;
     return !buf ? 4 + 11 : sprintf(buf, "<dz %d", len);
 }
@@ -373,7 +412,8 @@ static const struct obf_ops datasize_obf_ops = {
     .genspec = datasize_obf_genspec,
 };
 
-static int datasize_obf_setup(struct obf* obf, char *val) {
+static int datasize_obf_setup(struct obf* obf, char *val)
+{
     int len;
 
     if (!val || 0 > kstrtoint(val, 10, &len) || len <= 0)
@@ -382,6 +422,87 @@ static int datasize_obf_setup(struct obf* obf, char *val) {
     obf->ops = &datasize_obf_ops;
     obf->priv = (void*)(uintptr_t)len;
 
+    return 0;
+}
+
+static const char* base64_table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static void datastring_obf_encode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
+    u32 c = 0;
+    u8 *dst8 = dst;
+    u8 *src8 = src;
+    int i, bits = 0;
+
+    for (i = 0; i < nSrc; ++i) {
+        c = c << 8 | src8[i];
+        bits += 8;
+        do {
+            bits -= 6;
+            *dst8++ = base64_table[(c >> bits) & 0x3f];
+        } while(bits >= 6);
+    }
+
+    if (bits) {
+        *dst8++ = base64_table[(c << (6 - bits)) & 0x3f];
+    }
+}
+
+static bool datastring_obf_decode(void *ctx, void *dst, int nDst, void *src, int nSrc)
+{
+    u32 c = 0;
+    u8 *dst8 = dst;
+    u8 *src8 = src;
+    int i, bits = 0;
+    const char *p;
+
+    for (i = 0; i < nSrc; ++i) {
+        // could be optimized by reverse lookup table
+        p = strchr(base64_table, src8[i]);
+        if (p == NULL)
+            return false;
+
+        c = c << 6 | (p - base64_table);
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            *dst8++ = c >> bits;
+        }
+    }
+
+    return false;
+}
+
+static int datastring_obf_encoded_len(void *ctx, int decoded_len)
+{
+    return decoded_len / 3 * 4 + DIV_ROUND_UP(decoded_len % 3 * 8, 6);
+}
+
+static int datastring_obf_decoded_len(void *ctx, int encoded_len)
+{
+    return encoded_len / 4 * 3 + encoded_len % 4 * 6 / 8;
+}
+
+static int datastring_obf_genspec(void *ctx, char *buf)
+{
+    return !buf ? 4 : sprintf(buf, "<dz>");
+}
+
+static const struct obf_ops datastring_obf_ops = {
+    .encode = datastring_obf_encode,
+    .decode = datastring_obf_decode,
+    .encoded_len = datastring_obf_encoded_len,
+    .decoded_len = datastring_obf_decoded_len,
+    .genspec = datastring_obf_genspec,
+};
+
+static int datastring_obf_setup(struct obf* obf, char *val) {
+    if (val)
+        return -EINVAL;
+
+    obf->ops = &datastring_obf_ops;
+    obf->priv = NULL;
+    
     return 0;
 }
 
@@ -431,6 +552,9 @@ int obf_chain_setup(struct obf_chain *chain, char* spec) {
         }
         else if (!strcmp(key, "d")) {
             err = data_obf_setup(&obf_list->obf, val);
+        }
+        else if (!strcmp(key, "ds")) {
+            err = datastring_obf_setup(&obf_list->obf, val);
         }
         else {
             err = -EINVAL;
