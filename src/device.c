@@ -246,9 +246,7 @@ static const struct net_device_ops netdev_ops = {
 	.ndo_open		= wg_open,
 	.ndo_stop		= wg_stop,
 	.ndo_start_xmit		= wg_xmit,
-#ifndef COMPAT_CANNOT_USE_PCPU_STAT_TYPE
 	.ndo_get_stats64 = dev_get_tstats64
-#endif
 };
 
 static void wg_destruct(struct net_device *dev)
