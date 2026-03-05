@@ -1399,4 +1399,10 @@ static inline char *nla_strdup(const struct nlattr *nla, gfp_t flags)
 #define COMPAT_CANNOT_USE_NETLINK_MCGRPS
 #endif
 
+/* Kernel 6.19+ renamed blake2s_state to blake2s_ctx and changed blake2s() arg order */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
+#define blake2s_state blake2s_ctx
+#define COMPAT_BLAKE2S_NEW_API
+#endif
+
 #endif /* _WG_COMPAT_H */
