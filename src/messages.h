@@ -140,6 +140,9 @@ enum message_size {
 #define DATA_PACKET_HEAD_ROOM \
 	ALIGN(sizeof(struct message_data) + SKB_HEADER_LEN, 4)
 
-enum { HANDSHAKE_DSCP = 0x88 /* AF41, plus 00 ECN */ };
+enum {
+	HANDSHAKE_DSCP = 0x88, /* AF41, plus 00 ECN */
+	JUNK_DSCP = 0xb8, /* EF, plus 00 ECN */
+};
 
 #endif /* _WG_MESSAGES_H */
