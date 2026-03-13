@@ -88,7 +88,10 @@ static struct wg_device *lookup_interface(struct nlattr **attrs,
 	struct net_device *dev = NULL;
 
 	if (!attrs[WGDEVICE_A_IFINDEX] == !attrs[WGDEVICE_A_IFNAME])
+	{
+		pr_err_ratelimited("amneziawg: lookup_interface invalid IFINDEX/IFNAME combination\n");
 		return ERR_PTR(-EBADR);
+	}
 	if (attrs[WGDEVICE_A_IFINDEX])
 		dev = dev_get_by_index(sock_net(skb->sk),
 				       nla_get_u32(attrs[WGDEVICE_A_IFINDEX]));
@@ -96,9 +99,15 @@ static struct wg_device *lookup_interface(struct nlattr **attrs,
 		dev = dev_get_by_name(sock_net(skb->sk),
 				      nla_data(attrs[WGDEVICE_A_IFNAME]));
 	if (!dev)
+	{
+		pr_err_ratelimited("amneziawg: lookup_interface device not found\n");
 		return ERR_PTR(-ENODEV);
+	}
 	if (!dev->rtnl_link_ops || !dev->rtnl_link_ops->kind ||
 	    strcmp(dev->rtnl_link_ops->kind, KBUILD_MODNAME)) {
+		pr_err_ratelimited("amneziawg: lookup_interface wrong link kind (expected %s, got %s)\n",
+				   KBUILD_MODNAME,
+				   dev->rtnl_link_ops && dev->rtnl_link_ops->kind ? dev->rtnl_link_ops->kind : "<none>");
 		dev_put(dev);
 		return ERR_PTR(-EOPNOTSUPP);
 	}
@@ -561,8 +570,10 @@ static int set_allowedip(struct wg_peer *peer, struct nlattr **attrs)
 	u8 cidr;
 
 	if (!attrs[WGALLOWEDIP_A_FAMILY] || !attrs[WGALLOWEDIP_A_IPADDR] ||
-	    !attrs[WGALLOWEDIP_A_CIDR_MASK])
+	    !attrs[WGALLOWEDIP_A_CIDR_MASK]) {
+		pr_err_ratelimited("amneziawg: set_allowedip missing required attributes\n");
 		return ret;
+	}
 	family = nla_get_u16(attrs[WGALLOWEDIP_A_FAMILY]);
 	cidr = nla_get_u8(attrs[WGALLOWEDIP_A_CIDR_MASK]);
 	if (attrs[WGALLOWEDIP_A_FLAGS])
@@ -588,6 +599,9 @@ static int set_allowedip(struct wg_peer *peer, struct nlattr **attrs)
 			ret = wg_allowedips_insert_v6(&peer->device->peer_allowedips,
 						      nla_data(attrs[WGALLOWEDIP_A_IPADDR]), cidr,
 						      peer, &peer->device->device_update_lock);
+	} else {
+		pr_err_ratelimited("amneziawg: set_allowedip invalid allowedip tuple (family=%u cidr=%u len=%u)\n",
+				   family, cidr, nla_len(attrs[WGALLOWEDIP_A_IPADDR]));
 	}
 
 	return ret;
@@ -604,8 +618,10 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 	if (attrs[WGPEER_A_PUBLIC_KEY] &&
 	    nla_len(attrs[WGPEER_A_PUBLIC_KEY]) == NOISE_PUBLIC_KEY_LEN)
 		public_key = nla_data(attrs[WGPEER_A_PUBLIC_KEY]);
-	else
+	else {
+		pr_err_ratelimited("amneziawg: set_peer invalid or missing public key\n");
 		goto out;
+	}
 	if (attrs[WGPEER_A_PRESHARED_KEY] &&
 	    nla_len(attrs[WGPEER_A_PRESHARED_KEY]) == NOISE_SYMMETRIC_KEY_LEN)
 		preshared_key = nla_data(attrs[WGPEER_A_PRESHARED_KEY]);
@@ -615,8 +631,11 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 
 	ret = -EPFNOSUPPORT;
 	if (attrs[WGPEER_A_PROTOCOL_VERSION]) {
-		if (nla_get_u32(attrs[WGPEER_A_PROTOCOL_VERSION]) != 1)
+		if (nla_get_u32(attrs[WGPEER_A_PROTOCOL_VERSION]) != 1) {
+			pr_err_ratelimited("amneziawg: set_peer unsupported protocol version %u\n",
+					   nla_get_u32(attrs[WGPEER_A_PROTOCOL_VERSION]));
 			goto out;
+	}
 	}
 
 	peer = wg_pubkey_hashtable_lookup(wg->peer_hashtable,
@@ -694,12 +713,18 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 		nla_for_each_nested(attr, attrs[WGPEER_A_ALLOWEDIPS], rem) {
 			ret = nla_parse_nested(allowedip, WGALLOWEDIP_A_MAX,
 					       attr, allowedip_policy, NULL);
-			if (ret < 0)
+			if (ret < 0) {
+				pr_err_ratelimited("amneziawg: set_peer failed to parse allowedip nested attrs (%d)\n",
+						   ret);
 				goto out;
+			}
 			ret = set_allowedip(peer, allowedip);
-			if (ret < 0)
+			if (ret < 0) {
+				pr_err_ratelimited("amneziawg: set_peer failed to set allowedip (%d)\n",
+						   ret);
 				goto out;
 		}
+	}
 	}
 
 	if (attrs[WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL]) {
@@ -716,6 +741,11 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 	}
 
 	if (flags & WGPEER_F_HAS_ADVANCED_SECURITY) {
+		if (!attrs[WGPEER_A_ADVANCED_SECURITY]) {
+			pr_err_ratelimited("amneziawg: set_peer WGPEER_F_HAS_ADVANCED_SECURITY set without WGPEER_A_ADVANCED_SECURITY attribute\n");
+			ret = -EINVAL;
+			goto out;
+		}
 		peer->advanced_security = wg->advanced_security &&
 				nla_get_flag(attrs[WGPEER_A_ADVANCED_SECURITY]);
 	}
@@ -804,37 +834,61 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	if (info->attrs[WGDEVICE_A_H1]) {
 		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H1], GFP_KERNEL);
+		if (!str) {
+			ret = -ENOMEM;
+			goto out;
+		}
 		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_INIT], str);
 		kfree(str);
-		if (ret)
+		if (ret) {
+			pr_err_ratelimited("amneziawg: invalid H1 descriptor\n");
 			goto out;
+	}
 	}
 
 	if (info->attrs[WGDEVICE_A_H2]) {
 		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H2], GFP_KERNEL);
+		if (!str) {
+			ret = -ENOMEM;
+			goto out;
+		}
 		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE], str);
 		kfree(str);
-		if (ret)
+		if (ret) {
+			pr_err_ratelimited("amneziawg: invalid H2 descriptor\n");
 			goto out;
+	}
 	}
 
 	if (info->attrs[WGDEVICE_A_H3]) {
 		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H3], GFP_KERNEL);
+		if (!str) {
+			ret = -ENOMEM;
+			goto out;
+		}
 		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_COOKIE], str);
 		kfree(str);
-		if (ret)
+		if (ret) {
+			pr_err_ratelimited("amneziawg: invalid H3 descriptor\n");
 			goto out;
+	}
 	}
 
 	if (info->attrs[WGDEVICE_A_H4]) {
 		wg->advanced_security = true;
 		str = nla_strdup(info->attrs[WGDEVICE_A_H4], GFP_KERNEL);
+		if (!str) {
+			ret = -ENOMEM;
+			goto out;
+		}
 		ret = mh_parse(&wg->headers[MSGIDX_TRANSPORT], str);
 		kfree(str);
-		if (ret)
+		if (ret) {
+			pr_err_ratelimited("amneziawg: invalid H4 descriptor\n");
 			goto out;
+	}
 	}
 
 	if (info->attrs[WGDEVICE_A_S3]) {
@@ -922,12 +976,17 @@ skip_set_private_key:
 		nla_for_each_nested(attr, info->attrs[WGDEVICE_A_PEERS], rem) {
 			ret = nla_parse_nested(peer, WGPEER_A_MAX, attr,
 					       peer_policy, NULL);
-			if (ret < 0)
+			if (ret < 0) {
+				pr_err_ratelimited("amneziawg: failed to parse peer nested attrs (%d)\n",
+						   ret);
 				goto out;
+			}
 			ret = set_peer(wg, peer);
-			if (ret < 0)
+			if (ret < 0) {
+				pr_err_ratelimited("amneziawg: failed to set peer (%d)\n", ret);
 				goto out;
 		}
+	}
 	}
 	ret = 0;
 
@@ -936,6 +995,8 @@ out:
 	rtnl_unlock();
 	dev_put(wg->dev);
 out_nodev:
+	if (ret)
+		pr_err_ratelimited("amneziawg: wg_set_device failed early (%d)\n", ret);
 	if (info->attrs[WGDEVICE_A_PRIVATE_KEY])
 		memzero_explicit(nla_data(info->attrs[WGDEVICE_A_PRIVATE_KEY]),
 				 nla_len(info->attrs[WGDEVICE_A_PRIVATE_KEY]));

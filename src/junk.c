@@ -281,6 +281,10 @@ int jp_spec_setup(struct jp_spec *spec) {
         goto error;
     }
 
+    kfree(spec->pkt);
+    kfree(spec->mods);
+    spec->pkt_size = 0;
+    spec->mods_size = 0;
     spec->pkt = kzalloc(pkt_size, GFP_KERNEL);
     spec->mods = kzalloc(mods_size * sizeof(*spec->mods), GFP_KERNEL);
     if (!spec->pkt || !spec->mods) {
@@ -288,7 +292,6 @@ int jp_spec_setup(struct jp_spec *spec) {
         goto error;
     }
 
-    spec->pkt_size = 0;
     list_for_each_entry_reverse(tag, &head, head) {
         if (tag->pkt) {
             memcpy(spec->pkt + spec->pkt_size, tag->pkt, tag->pkt_size);

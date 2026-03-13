@@ -22,6 +22,22 @@ enum noise_lengths {
 	NOISE_HASH_LEN = BLAKE2S_HASH_SIZE
 };
 
+#if COMPAT_VERSION > 6 || (COMPAT_VERSION == 6 && COMPAT_PATCHLEVEL >= 19)
+#define wg_blake2s_state blake2s_ctx
+static inline void wg_blake2s(u8 *out, const u8 *in, const u8 *key,
+			      size_t outlen, size_t inlen, size_t keylen)
+{
+	blake2s(key, keylen, in, inlen, out, outlen);
+}
+#else
+#define wg_blake2s_state blake2s_state
+static inline void wg_blake2s(u8 *out, const u8 *in, const u8 *key,
+			      size_t outlen, size_t inlen, size_t keylen)
+{
+	blake2s(out, in, key, outlen, inlen, keylen);
+}
+#endif
+
 #define noise_encrypted_len(plain_len) ((plain_len) + NOISE_AUTHTAG_LEN)
 
 enum cookie_values {
@@ -140,6 +156,9 @@ enum message_size {
 #define DATA_PACKET_HEAD_ROOM \
 	ALIGN(sizeof(struct message_data) + SKB_HEADER_LEN, 4)
 
-enum { HANDSHAKE_DSCP = 0x88 /* AF41, plus 00 ECN */ };
+enum {
+	HANDSHAKE_DSCP = 0x88, /* AF41, plus 00 ECN */
+	JUNK_DSCP = 0xb8, /* EF, plus 00 ECN */
+};
 
 #endif /* _WG_MESSAGES_H */

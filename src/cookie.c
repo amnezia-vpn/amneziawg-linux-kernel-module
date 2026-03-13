@@ -10,7 +10,6 @@
 #include "ratelimiter.h"
 #include "timers.h"
 
-#include <crypto/blake2s.h>
 #include <crypto/chacha20poly1305.h>
 #include <crypto/utils.h>
 
@@ -33,7 +32,7 @@ static void precompute_key(u8 key[NOISE_SYMMETRIC_KEY_LEN],
 			   const u8 pubkey[NOISE_PUBLIC_KEY_LEN],
 			   const u8 label[COOKIE_KEY_LABEL_LEN])
 {
-	struct blake2s_state blake;
+	struct wg_blake2s_state blake;
 
 	blake2s_init(&blake, NOISE_SYMMETRIC_KEY_LEN);
 	blake2s_update(&blake, label, COOKIE_KEY_LABEL_LEN);
@@ -77,7 +76,7 @@ static void compute_mac1(u8 mac1[COOKIE_LEN], const void *message, size_t len,
 {
 	len = len - sizeof(struct message_macs) +
 	      offsetof(struct message_macs, mac1);
-	blake2s(mac1, message, key, COOKIE_LEN, len, NOISE_SYMMETRIC_KEY_LEN);
+	wg_blake2s(mac1, message, key, COOKIE_LEN, len, NOISE_SYMMETRIC_KEY_LEN);
 }
 
 static void compute_mac2(u8 mac2[COOKIE_LEN], const void *message, size_t len,
@@ -85,13 +84,13 @@ static void compute_mac2(u8 mac2[COOKIE_LEN], const void *message, size_t len,
 {
 	len = len - sizeof(struct message_macs) +
 	      offsetof(struct message_macs, mac2);
-	blake2s(mac2, message, cookie, COOKIE_LEN, len, COOKIE_LEN);
+	wg_blake2s(mac2, message, cookie, COOKIE_LEN, len, COOKIE_LEN);
 }
 
 static void make_cookie(u8 cookie[COOKIE_LEN], struct sk_buff *skb,
 			struct cookie_checker *checker)
 {
-	struct blake2s_state state;
+	struct wg_blake2s_state state;
 
 	if (wg_birthdate_has_expired(checker->secret_birthdate,
 				     COOKIE_SECRET_MAX_AGE)) {
