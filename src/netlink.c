@@ -849,26 +849,31 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 
 	if (info->attrs[WGDEVICE_A_I1]) {
 		wg->advanced_security = true;
+		kfree(wg->ispecs[0].desc);
 		wg->ispecs[0].desc = nla_strdup(info->attrs[WGDEVICE_A_I1], GFP_KERNEL);
 	}
 
 	if (info->attrs[WGDEVICE_A_I2]) {
 		wg->advanced_security = true;
+		kfree(wg->ispecs[1].desc);
 		wg->ispecs[1].desc = nla_strdup(info->attrs[WGDEVICE_A_I2], GFP_KERNEL);
 	}
 
 	if (info->attrs[WGDEVICE_A_I3]) {
 		wg->advanced_security = true;
+		kfree(wg->ispecs[2].desc);
 		wg->ispecs[2].desc = nla_strdup(info->attrs[WGDEVICE_A_I3], GFP_KERNEL);
 	}
 
 	if (info->attrs[WGDEVICE_A_I4]) {
 		wg->advanced_security = true;
+		kfree(wg->ispecs[3].desc);
 		wg->ispecs[3].desc = nla_strdup(info->attrs[WGDEVICE_A_I4], GFP_KERNEL);
 	}
 
 	if (info->attrs[WGDEVICE_A_I5]) {
 		wg->advanced_security = true;
+		kfree(wg->ispecs[4].desc);
 		wg->ispecs[4].desc = nla_strdup(info->attrs[WGDEVICE_A_I5], GFP_KERNEL);
 	}
 
