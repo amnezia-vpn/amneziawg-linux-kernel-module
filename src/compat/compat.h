@@ -1401,6 +1401,7 @@ static inline char *nla_strdup(const struct nlattr *nla, gfp_t flags)
 
 /* Kernel 6.19+ renamed blake2s_state to blake2s_ctx and changed blake2s() arg order */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 19, 0)
+#include <crypto/blake2s.h>
 #define blake2s_ctx blake2s_state
 #define blake2s(key, keylen, in, inlen, out, outlen) \
 	blake2s(out, in, key, outlen, inlen, keylen)
