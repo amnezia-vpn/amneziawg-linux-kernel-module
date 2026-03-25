@@ -362,12 +362,14 @@ static int wg_newlink(struct net_device *dev,
 {
 	struct net *link_net = rtnl_newlink_link_net(params);
 	struct wg_device *wg = netdev_priv(dev);
-	int ret = -ENOMEM;
+	int ret = -ENOMEM, i;
 
 	rcu_assign_pointer(wg->creating_net, link_net);
 	init_rwsem(&wg->static_identity.lock);
 	mutex_init(&wg->socket_update_lock);
 	mutex_init(&wg->device_update_lock);
+	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i)
+		mutex_init(&wg->ispecs[i].lock);
 	wg_allowedips_init(&wg->peer_allowedips);
 	wg_cookie_checker_init(&wg->cookie_checker, wg);
 	INIT_LIST_HEAD(&wg->peer_list);

@@ -255,8 +255,6 @@ int jp_spec_setup(struct jp_spec *spec) {
     char* buf;
     LIST_HEAD(head);
 
-    mutex_init(&spec->lock);
-
     mutex_lock(&spec->lock);
 
     kfree(spec->pkt);
@@ -303,8 +301,6 @@ int jp_spec_setup(struct jp_spec *spec) {
         goto error;
     }
 
-    spec->pkt_size = 0;
-    spec->mods_size = 0;
     list_for_each_entry_reverse(tag, &head, head) {
         if (tag->pkt) {
             memcpy(spec->pkt + spec->pkt_size, tag->pkt, tag->pkt_size);
