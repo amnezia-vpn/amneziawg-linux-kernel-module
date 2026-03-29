@@ -14,7 +14,9 @@
 #include "messages.h"
 #include "cookie.h"
 
+#ifdef COMPAT_CRYPTO_IS_ZINC
 #include <linux/simd.h>
+#endif
 #include <linux/uio.h>
 #include <linux/inetdevice.h>
 #include <linux/socket.h>
