@@ -29,7 +29,6 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 	struct message_handshake_initiation packet;
 	struct wg_device *wg = peer->device;
 	void *buffer;
-	u8 ds;
 	u16 junk_packet_count, junk_packet_size;
 	int i;
 	struct jp_spec* spec;
@@ -50,7 +49,7 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 		if (spec->pkt_size > 0) {
 			mutex_lock(&spec->lock);
 			jp_spec_applymods(spec, peer);
-			wg_socket_send_buffer_to_peer(peer, spec->pkt, spec->pkt_size, 0, 0);
+			wg_socket_send_buffer_to_peer(peer, spec->pkt, spec->pkt_size, JUNK_DSCP, 0);
 			atomic_inc(&peer->jp_packet_counter);
 			mutex_unlock(&spec->lock);
 		}
@@ -68,8 +67,7 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 			junk_packet_size = (u16) get_random_u32_inclusive(wg->jmin, wg->jmax);
 
 			get_random_bytes(buffer, junk_packet_size);
-			get_random_bytes(&ds, 1);
-			wg_socket_send_buffer_to_peer(peer, buffer, junk_packet_size, ds, 0);
+			wg_socket_send_buffer_to_peer(peer, buffer, junk_packet_size, JUNK_DSCP, 0);
 		}
 
 		kfree(buffer);
