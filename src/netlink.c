@@ -126,11 +126,37 @@ static int get_allowedips(struct sk_buff *skb, const u8 *ip, u8 cidr,
 	return 0;
 }
 
+enum wg_dump_device_pos {
+	WG_DUMP_LISTEN_PORT = 0,
+	WG_DUMP_FWMARK,
+	WG_DUMP_IFINDEX,
+	WG_DUMP_IFNAME,
+	WG_DUMP_JC,
+	WG_DUMP_JMIN,
+	WG_DUMP_JMAX,
+	WG_DUMP_S1,
+	WG_DUMP_S2,
+	WG_DUMP_H1,
+	WG_DUMP_H2,
+	WG_DUMP_H3,
+	WG_DUMP_H4,
+	WG_DUMP_S3,
+	WG_DUMP_S4,
+	WG_DUMP_I1,
+	WG_DUMP_I2,
+	WG_DUMP_I3,
+	WG_DUMP_I4,
+	WG_DUMP_I5,
+	WG_DUMP_KEYS,
+	WG_DUMP_DEVICE_DONE
+};
+
 struct dump_ctx {
 	struct wg_device *wg;
 	struct wg_peer *next_peer;
 	u64 allowedips_seq;
 	struct allowedips_node *next_allowedip;
+	u8 device_pos;
 };
 
 #define DUMP_CTX(cb) ((struct dump_ctx *)(cb)->args)
@@ -405,7 +431,188 @@ static int wg_get_device_start(struct netlink_callback *cb)
 	if (IS_ERR(wg))
 		return PTR_ERR(wg);
 	DUMP_CTX(cb)->wg = wg;
+	DUMP_CTX(cb)->device_pos = WG_DUMP_LISTEN_PORT;
 	return 0;
+}
+
+static int wg_put_device_attrs(struct wg_device *wg, struct sk_buff *skb,
+			       struct dump_ctx *ctx)
+{
+	char buf[32];
+
+	for (;;) {
+		switch (ctx->device_pos) {
+		case WG_DUMP_LISTEN_PORT:
+			if (nla_put_u16(skb, WGDEVICE_A_LISTEN_PORT, wg->incoming_port))
+				return -EMSGSIZE;
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_FWMARK:
+			if (nla_put_u32(skb, WGDEVICE_A_FWMARK, wg->fwmark))
+				return -EMSGSIZE;
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_IFINDEX:
+			if (nla_put_u32(skb, WGDEVICE_A_IFINDEX, wg->dev->ifindex))
+				return -EMSGSIZE;
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_IFNAME:
+			if (nla_put_string(skb, WGDEVICE_A_IFNAME, wg->dev->name))
+				return -EMSGSIZE;
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_JC:
+			if (nla_put_u16(skb, WGDEVICE_A_JC, wg->jc))
+				return -EMSGSIZE;
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_JMIN:
+			if (nla_put_u16(skb, WGDEVICE_A_JMIN, wg->jmin))
+				return -EMSGSIZE;
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_JMAX:
+			if (nla_put_u16(skb, WGDEVICE_A_JMAX, wg->jmax))
+				return -EMSGSIZE;
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_S1:
+			if (nla_put_u16(skb, WGDEVICE_A_S1, wg->junk_size[MSGIDX_HANDSHAKE_INIT]))
+				return -EMSGSIZE;
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_S2:
+			if (nla_put_u16(skb, WGDEVICE_A_S2,wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]))
+				return -EMSGSIZE;
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_H1:
+			if (mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_INIT], buf, sizeof(buf)) &&
+				nla_put_string(skb, WGDEVICE_A_H1, buf)) {
+				return -EMSGSIZE;
+			}
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_H2:
+			if (mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE], buf, sizeof(buf)) &&
+				nla_put_string(skb, WGDEVICE_A_H2, buf)) {
+				return -EMSGSIZE;
+			}
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_H3:
+			if (mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_COOKIE], buf, sizeof(buf)) &&
+				nla_put_string(skb, WGDEVICE_A_H3, buf)) {
+				return -EMSGSIZE;
+			}
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_H4:
+			if (mh_genspec(&wg->headers[MSGIDX_TRANSPORT], buf, sizeof(buf)) &&
+				nla_put_string(skb, WGDEVICE_A_H4, buf)) {
+				return -EMSGSIZE;
+			}
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_S3:
+			if (nla_put_u16(skb, WGDEVICE_A_S3, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]))
+				return -EMSGSIZE;
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_S4:
+			if (nla_put_u16(skb, WGDEVICE_A_S4, wg->junk_size[MSGIDX_TRANSPORT]))
+				return -EMSGSIZE;
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_I1:
+			if (wg->ispecs[0].desc &&
+				nla_put_string(skb, WGDEVICE_A_I1, wg->ispecs[0].desc)) {
+				return -EMSGSIZE;
+			}
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_I2:
+			if (wg->ispecs[1].desc &&
+				nla_put_string(skb, WGDEVICE_A_I2, wg->ispecs[1].desc)) {
+				return -EMSGSIZE;
+			}
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_I3:
+			if (wg->ispecs[2].desc &&
+				nla_put_string(skb, WGDEVICE_A_I3, wg->ispecs[2].desc)) {
+				return -EMSGSIZE;
+			}
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_I4:
+			if (wg->ispecs[3].desc &&
+				nla_put_string(skb, WGDEVICE_A_I4, wg->ispecs[3].desc)) {
+				return -EMSGSIZE;
+			}
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_I5:
+			if (wg->ispecs[4].desc &&
+				nla_put_string(skb, WGDEVICE_A_I5, wg->ispecs[4].desc)) {
+				return -EMSGSIZE;
+			}
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_KEYS:
+			down_read(&wg->static_identity.lock);
+			if (wg->static_identity.has_identity) {
+				unsigned int need =
+					nla_total_size(NOISE_PUBLIC_KEY_LEN) +
+					nla_total_size(NOISE_PUBLIC_KEY_LEN);
+
+				/* Keep private/public key dump atomic within one multipart chunk. */
+				if (skb_tailroom(skb) < need) {
+					up_read(&wg->static_identity.lock);
+					return -EMSGSIZE;
+				}
+
+				if (nla_put(skb, WGDEVICE_A_PRIVATE_KEY,
+						NOISE_PUBLIC_KEY_LEN,
+						wg->static_identity.static_private) ||
+					nla_put(skb, WGDEVICE_A_PUBLIC_KEY,
+						NOISE_PUBLIC_KEY_LEN,
+						wg->static_identity.static_public)) {
+					// This must not be reached.
+					up_read(&wg->static_identity.lock);
+					WARN_ON_ONCE(1);
+					return -EIO;
+				}
+			}
+			up_read(&wg->static_identity.lock);
+			ctx->device_pos++;
+			break;
+
+		case WG_DUMP_DEVICE_DONE:
+			return 0;
+		}
+	}
 }
 
 static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
@@ -417,7 +624,6 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 	int ret = -EMSGSIZE;
 	bool done = true;
 	void *hdr;
-	char buf[32];
 
 	rtnl_lock();
 	mutex_lock(&wg->device_update_lock);
@@ -430,57 +636,29 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 		goto out;
 	genl_dump_check_consistent(cb, hdr);
 
-	if (!ctx->next_peer) {
-		if (nla_put_u16(skb, WGDEVICE_A_LISTEN_PORT,
-				wg->incoming_port) ||
-		    nla_put_u32(skb, WGDEVICE_A_FWMARK, wg->fwmark) ||
-		    nla_put_u32(skb, WGDEVICE_A_IFINDEX, wg->dev->ifindex) ||
-		    nla_put_string(skb, WGDEVICE_A_IFNAME, wg->dev->name) ||
-		    nla_put_u16(skb, WGDEVICE_A_JC, wg->jc) ||
-		    nla_put_u16(skb, WGDEVICE_A_JMIN, wg->jmin) ||
-		    nla_put_u16(skb, WGDEVICE_A_JMAX, wg->jmax) ||
-		    nla_put_u16(skb, WGDEVICE_A_S1, wg->junk_size[MSGIDX_HANDSHAKE_INIT]) ||
-		    nla_put_u16(skb, WGDEVICE_A_S2,wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]) ||
-		    (mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_INIT], buf, sizeof(buf)) &&
-				nla_put_string(skb, WGDEVICE_A_H1, buf)) ||
-			(mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE], buf, sizeof(buf)) &&
-				nla_put_string(skb, WGDEVICE_A_H2, buf)) ||
-			(mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_COOKIE], buf, sizeof(buf)) &&
-				nla_put_string(skb, WGDEVICE_A_H3, buf)) ||
-			(mh_genspec(&wg->headers[MSGIDX_TRANSPORT], buf, sizeof(buf)) &&
-				nla_put_string(skb, WGDEVICE_A_H4, buf)) ||
-			nla_put_u16(skb, WGDEVICE_A_S3, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]) ||
-			nla_put_u16(skb, WGDEVICE_A_S4, wg->junk_size[MSGIDX_TRANSPORT]) ||
-			(wg->ispecs[0].desc &&
-				nla_put_string(skb, WGDEVICE_A_I1, wg->ispecs[0].desc)) ||
-			(wg->ispecs[1].desc &&
-				nla_put_string(skb, WGDEVICE_A_I2, wg->ispecs[1].desc)) ||
-			(wg->ispecs[2].desc &&
-				nla_put_string(skb, WGDEVICE_A_I3, wg->ispecs[2].desc)) ||
-			(wg->ispecs[3].desc &&
-				nla_put_string(skb, WGDEVICE_A_I4, wg->ispecs[3].desc)) ||
-			(wg->ispecs[4].desc &&
-				nla_put_string(skb, WGDEVICE_A_I5, wg->ispecs[4].desc)))
+	unsigned int prev_msg_len = skb->len;
+	ret = wg_put_device_attrs(wg, skb, ctx);
+	if (ret) {
+		if (ret != -EMSGSIZE)
 			goto out;
 
-		down_read(&wg->static_identity.lock);
-		if (wg->static_identity.has_identity) {
-			if (nla_put(skb, WGDEVICE_A_PRIVATE_KEY,
-				    NOISE_PUBLIC_KEY_LEN,
-				    wg->static_identity.static_private) ||
-			    nla_put(skb, WGDEVICE_A_PUBLIC_KEY,
-				    NOISE_PUBLIC_KEY_LEN,
-				    wg->static_identity.static_public)) {
-				up_read(&wg->static_identity.lock);
-				goto out;
-			}
-		}
-		up_read(&wg->static_identity.lock);
+		if (skb->len == prev_msg_len)
+			goto out;   /* true -EMSGSIZE: even first pending attr doesn't fit */
+
+		ret = 0;
+		done = false;
+		goto out;       /* partial success: send what we have, resume later */
 	}
 
 	peers_nest = nla_nest_start(skb, WGDEVICE_A_PEERS);
-	if (!peers_nest)
+	if (!peers_nest) {
+		if (skb->len == prev_msg_len)
+			goto out;
+
+		ret = 0;
+		done = false;
 		goto out;
+	}
 	ret = 0;
 	lockdep_assert_held(&wg->device_update_lock);
 	/* If the last cursor was removed in peer_remove or peer_remove_all, then
