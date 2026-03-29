@@ -3,6 +3,7 @@
  * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
 
+#include "compat/compat.h"
 #include "queueing.h"
 #include "device.h"
 #include "peer.h"
@@ -12,7 +13,9 @@
 #include "socket.h"
 #include "magic_header.h"
 
+#ifdef COMPAT_CRYPTO_IS_ZINC
 #include <linux/simd.h>
+#endif
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <linux/udp.h>
@@ -262,8 +265,8 @@ static void keep_key_fresh(struct wg_peer *peer)
 	}
 }
 
-static bool decrypt_packet(struct sk_buff *skb, struct noise_keypair *keypair,
-			   simd_context_t *simd_context)
+static bool decrypt_packet(struct sk_buff *skb, struct noise_keypair *keypair
+			   COMPAT_MAYBE_SIMD_CONTEXT(simd_context_t *simd_context))
 {
 	struct scatterlist sg[MAX_SKB_FRAGS + 8];
 	struct sk_buff *trailer;
@@ -521,22 +524,27 @@ void wg_packet_decrypt_worker(struct work_struct *work)
 {
 	struct crypt_queue *queue = container_of(work, struct multicore_worker,
 						 work)->ptr;
-	simd_context_t simd_context;
 	struct sk_buff *skb;
-
+#ifdef COMPAT_CRYPTO_IS_ZINC
+	simd_context_t simd_context;
 	simd_get(&simd_context);
+#endif
 	while ((skb = ptr_ring_consume_bh(&queue->ring)) != NULL) {
 		enum packet_state state =
-			likely(decrypt_packet(skb, PACKET_CB(skb)->keypair,
-					      &simd_context)) ?
+			likely(decrypt_packet(skb, PACKET_CB(skb)->keypair
+					      COMPAT_MAYBE_SIMD_CONTEXT(&simd_context))) ?
 				PACKET_STATE_CRYPTED : PACKET_STATE_DEAD;
 		wg_queue_enqueue_per_peer_rx(skb, state);
+#ifdef COMPAT_CRYPTO_IS_ZINC
 		simd_relax(&simd_context);
+#endif
 		if (need_resched())
 			cond_resched();
 	}
 
+#ifdef COMPAT_CRYPTO_IS_ZINC
 	simd_put(&simd_context);
+#endif
 }
 
 static void wg_packet_consume_data(struct wg_device *wg, struct sk_buff *skb)
