@@ -66,6 +66,7 @@ struct wg_peer {
 	u64 internal_id;
 	atomic_t jp_packet_counter;
 	bool advanced_security;
+	bool ranged_headers;
 };
 
 struct wg_peer *wg_peer_create(struct wg_device *wg,
