@@ -600,6 +600,9 @@ wg_noise_handshake_consume_initiation(struct message_handshake_initiation *src,
 	u64 initiation_consumption;
 	bool advanced_security = wg->advanced_security &&
 	                         mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_INIT]);
+	bool ranged_headers = advanced_security &&
+	                      (le32_to_cpu(SKB_TYPE_LE32(skb)) !=
+	                       wg->headers[MSGIDX_HANDSHAKE_INIT].start);
 
 	down_read(&wg->static_identity.lock);
 	if (unlikely(!wg->static_identity.has_identity))
@@ -626,11 +629,13 @@ wg_noise_handshake_consume_initiation(struct message_handshake_initiation *src,
 			goto out;
 
 		net_dbg_skb_ratelimited("%s: unknown peer from %pISpfsc\n", wg->dev->name, skb);
-		wg_genl_mcast_peer_unknown(wg, s, endpoint, advanced_security);
+		wg_genl_mcast_peer_unknown(wg, s, endpoint,
+					   advanced_security, ranged_headers);
 		goto out;
 	}
 	handshake = &peer->handshake;
 	peer->advanced_security = advanced_security;
+	peer->ranged_headers = ranged_headers;
 
 	/* ss */
 	if (!mix_precomputed_dh(chaining_key, key,

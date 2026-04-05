@@ -118,6 +118,9 @@
  *            WGPEER_A_ADVANCED_SECURITY: flag indicating that advanced security
  *                                       techniques provided by AmneziaWG should
  *                                       be used.
+ *            WGPEER_A_RANGED_HEADERS: flag indicating that the peer supports
+ *                                     ranged (AWG 2.0) magic headers rather
+ *                                     than fixed (AWG 1.0) values.
  *        0: NLA_NESTED
  *            ...
  *        ...
@@ -228,6 +231,7 @@ enum wgpeer_attribute {
 	WGPEER_A_ALLOWEDIPS,
 	WGPEER_A_PROTOCOL_VERSION,
 	WGPEER_A_ADVANCED_SECURITY,
+	WGPEER_A_RANGED_HEADERS,
 	__WGPEER_A_LAST
 };
 #define WGPEER_A_MAX (__WGPEER_A_LAST - 1)
