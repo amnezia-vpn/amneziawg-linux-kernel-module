@@ -72,7 +72,8 @@ static const struct nla_policy peer_policy[WGPEER_A_MAX + 1] = {
 	[WGPEER_A_TX_BYTES]				= { .type = NLA_U64 },
 	[WGPEER_A_ALLOWEDIPS]				= { .type = NLA_NESTED },
 	[WGPEER_A_PROTOCOL_VERSION]			= { .type = NLA_U32 },
-	[WGPEER_A_ADVANCED_SECURITY]    		= { .type = NLA_FLAG }
+	[WGPEER_A_ADVANCED_SECURITY]    		= { .type = NLA_FLAG },
+	[WGPEER_A_RANGED_HEADERS]			= { .type = NLA_FLAG }
 };
 
 static const struct nla_policy allowedip_policy[WGALLOWEDIP_A_MAX + 1] = {
@@ -297,6 +298,11 @@ get_peer(struct wg_peer *peer, struct sk_buff *skb, struct dump_ctx *ctx)
 		fail = nla_put_flag(skb, WGPEER_A_ADVANCED_SECURITY);
 		if (fail)
 			goto err;
+		if (peer->ranged_headers) {
+			fail = nla_put_flag(skb, WGPEER_A_RANGED_HEADERS);
+			if (fail)
+				goto err;
+		}
 	}
 
 	down_read(&peer->handshake.lock);
@@ -718,6 +724,16 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 	if (flags & WGPEER_F_HAS_ADVANCED_SECURITY) {
 		peer->advanced_security = wg->advanced_security &&
 				nla_get_flag(attrs[WGPEER_A_ADVANCED_SECURITY]);
+		if (attrs[WGPEER_A_RANGED_HEADERS])
+			peer->ranged_headers = peer->advanced_security &&
+				nla_get_flag(attrs[WGPEER_A_RANGED_HEADERS]);
+		else
+			/* Default based on whether device uses ranges.
+			 * Will be auto-corrected on first incoming handshake.
+			 */
+			peer->ranged_headers = peer->advanced_security &&
+				(wg->headers[MSGIDX_HANDSHAKE_INIT].start !=
+				 wg->headers[MSGIDX_HANDSHAKE_INIT].end);
 	}
 
 	if (netif_running(wg->dev))
@@ -1016,7 +1032,8 @@ void __exit wg_genetlink_uninit(void)
 }
 
 int wg_genl_mcast_peer_unknown(struct wg_device *wg, const u8 pubkey[NOISE_PUBLIC_KEY_LEN],
-	                           struct endpoint *endpoint, bool advanced_security)
+	                           struct endpoint *endpoint, bool advanced_security,
+	                           bool ranged_headers)
 {
 	struct sk_buff *skb;
 	struct nlattr *peer_nest;
@@ -1061,6 +1078,11 @@ int wg_genl_mcast_peer_unknown(struct wg_device *wg, const u8 pubkey[NOISE_PUBLI
 		ret = nla_put_flag(skb, WGPEER_A_ADVANCED_SECURITY);
 		if (ret)
 			goto err;
+		if (ranged_headers) {
+			ret = nla_put_flag(skb, WGPEER_A_RANGED_HEADERS);
+			if (ret)
+				goto err;
+		}
 	}
 
 	nla_nest_end(skb, peer_nest);
