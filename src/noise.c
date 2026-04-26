@@ -603,6 +603,9 @@ wg_noise_handshake_consume_initiation(struct message_handshake_initiation *src,
 	bool ranged_headers = advanced_security &&
 	                      (le32_to_cpu(SKB_TYPE_LE32(skb)) !=
 	                       wg->headers[MSGIDX_HANDSHAKE_INIT].start);
+	bool junk_offsets = advanced_security &&
+	                    (wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] > 0 ||
+	                     wg->junk_size[MSGIDX_TRANSPORT] > 0);
 
 	down_read(&wg->static_identity.lock);
 	if (unlikely(!wg->static_identity.has_identity))
@@ -630,12 +633,19 @@ wg_noise_handshake_consume_initiation(struct message_handshake_initiation *src,
 
 		net_dbg_skb_ratelimited("%s: unknown peer from %pISpfsc\n", wg->dev->name, skb);
 		wg_genl_mcast_peer_unknown(wg, s, endpoint,
-					   advanced_security, ranged_headers);
+					   advanced_security, ranged_headers,
+					   junk_offsets);
 		goto out;
 	}
 	handshake = &peer->handshake;
 	peer->advanced_security = advanced_security;
 	peer->ranged_headers = ranged_headers;
+	/* Don't reset junk_offsets here — the handshake carries no
+	 * information about whether the client uses S3/S4.  The initial
+	 * value from wg_peer_create (server default) is refined by the
+	 * transport data path in wg_packet_consume_data, and must survive
+	 * across re-handshakes.
+	 */
 
 	/* ss */
 	if (!mix_precomputed_dh(chaining_key, key,

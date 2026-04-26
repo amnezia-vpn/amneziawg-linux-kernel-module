@@ -73,7 +73,8 @@ static const struct nla_policy peer_policy[WGPEER_A_MAX + 1] = {
 	[WGPEER_A_ALLOWEDIPS]				= { .type = NLA_NESTED },
 	[WGPEER_A_PROTOCOL_VERSION]			= { .type = NLA_U32 },
 	[WGPEER_A_ADVANCED_SECURITY]    		= { .type = NLA_FLAG },
-	[WGPEER_A_RANGED_HEADERS]			= { .type = NLA_FLAG }
+	[WGPEER_A_RANGED_HEADERS]			= { .type = NLA_FLAG },
+	[WGPEER_A_JUNK_OFFSETS]				= { .type = NLA_FLAG }
 };
 
 static const struct nla_policy allowedip_policy[WGALLOWEDIP_A_MAX + 1] = {
@@ -300,6 +301,11 @@ get_peer(struct wg_peer *peer, struct sk_buff *skb, struct dump_ctx *ctx)
 			goto err;
 		if (peer->ranged_headers) {
 			fail = nla_put_flag(skb, WGPEER_A_RANGED_HEADERS);
+			if (fail)
+				goto err;
+		}
+		if (peer->junk_offsets) {
+			fail = nla_put_flag(skb, WGPEER_A_JUNK_OFFSETS);
 			if (fail)
 				goto err;
 		}
@@ -734,6 +740,13 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 			peer->ranged_headers = peer->advanced_security &&
 				(wg->headers[MSGIDX_HANDSHAKE_INIT].start !=
 				 wg->headers[MSGIDX_HANDSHAKE_INIT].end);
+		if (attrs[WGPEER_A_JUNK_OFFSETS])
+			peer->junk_offsets = peer->advanced_security &&
+				nla_get_flag(attrs[WGPEER_A_JUNK_OFFSETS]);
+		/* else: leave junk_offsets unchanged — it is auto-detected
+		 * from transport packets and must not be reset when the
+		 * userspace tool doesn't explicitly provide it.
+		 */
 	}
 
 	if (netif_running(wg->dev))
@@ -1033,7 +1046,7 @@ void __exit wg_genetlink_uninit(void)
 
 int wg_genl_mcast_peer_unknown(struct wg_device *wg, const u8 pubkey[NOISE_PUBLIC_KEY_LEN],
 	                           struct endpoint *endpoint, bool advanced_security,
-	                           bool ranged_headers)
+	                           bool ranged_headers, bool junk_offsets)
 {
 	struct sk_buff *skb;
 	struct nlattr *peer_nest;
@@ -1080,6 +1093,11 @@ int wg_genl_mcast_peer_unknown(struct wg_device *wg, const u8 pubkey[NOISE_PUBLI
 			goto err;
 		if (ranged_headers) {
 			ret = nla_put_flag(skb, WGPEER_A_RANGED_HEADERS);
+			if (ret)
+				goto err;
+		}
+		if (junk_offsets) {
+			ret = nla_put_flag(skb, WGPEER_A_JUNK_OFFSETS);
 			if (ret)
 				goto err;
 		}

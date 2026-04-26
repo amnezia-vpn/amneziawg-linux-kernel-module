@@ -67,6 +67,7 @@ struct wg_peer {
 	atomic_t jp_packet_counter;
 	bool advanced_security;
 	bool ranged_headers;
+	bool junk_offsets;
 };
 
 struct wg_peer *wg_peer_create(struct wg_device *wg,

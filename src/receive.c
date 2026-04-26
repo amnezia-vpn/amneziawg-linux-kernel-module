@@ -27,14 +27,15 @@ static void update_rx_stats(struct wg_peer *peer, size_t len)
 	peer->rx_bytes += len;
 }
 
-static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg)
+static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg,
+				  bool *had_junk_offsets)
 {
 	if (skb_is_nonlinear(skb) && unlikely(skb_linearize(skb))) {
 		net_dbg_skb_ratelimited("%s: non-linear sk_buff from %pISpfsc could not be linearized, dropping packet\n",
 								wg->dev->name, skb);
 		return 0;
 	}
-	
+
 	if (skb->len == wg->junk_size[MSGIDX_HANDSHAKE_INIT] + MESSAGE_INITIATION_SIZE) {
 		skb_pull(skb, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
 		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_INIT]))
@@ -54,17 +55,34 @@ static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg)
 	if (skb->len == wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] + MESSAGE_COOKIE_REPLY_SIZE) {
 		skb_pull(skb, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
 		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_COOKIE]))
-			return MESSAGE_HANDSHAKE_COOKIE;
+			return MESSAGE_COOKIE_REPLY_SIZE;
 		else
 			skb_push(skb, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
 	}
 
 	if (skb->len >= wg->junk_size[MSGIDX_TRANSPORT] + MESSAGE_TRANSPORT_SIZE) {
 		skb_pull(skb, wg->junk_size[MSGIDX_TRANSPORT]);
-		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_TRANSPORT]))
+		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_TRANSPORT])) {
+			*had_junk_offsets = true;
 			return MESSAGE_TRANSPORT_SIZE;
-		else
+		} else
 			skb_push(skb, wg->junk_size[MSGIDX_TRANSPORT]);
+	}
+
+	/* AWG peer without S3-S4 junk offsets: try AWG headers at standard
+	 * offsets. Only needed when server has S3/S4 configured, otherwise
+	 * the blocks above already handle this (strip 0 bytes = no-op).
+	 */
+	if (wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] > 0 &&
+	    skb->len == MESSAGE_COOKIE_REPLY_SIZE &&
+	    mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_COOKIE]))
+		return MESSAGE_COOKIE_REPLY_SIZE;
+
+	if (wg->junk_size[MSGIDX_TRANSPORT] > 0 &&
+	    skb->len >= MESSAGE_MINIMUM_LENGTH &&
+	    mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_TRANSPORT])) {
+		*had_junk_offsets = false;
+		return MESSAGE_TRANSPORT_SIZE;
 	}
 
 	/* Legacy WireGuard client support: accept standard packets */
@@ -87,7 +105,8 @@ static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg)
 	return 0;
 }
 
-static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
+static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg,
+			      bool *had_junk_offsets)
 {
 	size_t data_offset, data_len, header_len;
 	struct udphdr *udp;
@@ -122,7 +141,7 @@ static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
 	if (unlikely(skb->len != data_len))
 		/* Final len does not agree with calculated len */
 		return -EINVAL;
-	header_len = prepare_awg_message(skb, wg);
+	header_len = prepare_awg_message(skb, wg, had_junk_offsets);
 	if (unlikely(!header_len))
 		return -EINVAL;
 	__skb_push(skb, data_offset);
@@ -563,7 +582,8 @@ void wg_packet_decrypt_worker(struct work_struct *work)
 #endif
 }
 
-static void wg_packet_consume_data(struct wg_device *wg, struct sk_buff *skb)
+static void wg_packet_consume_data(struct wg_device *wg, struct sk_buff *skb,
+				   bool had_junk_offsets)
 {
 	__le32 idx = ((struct message_data *)skb->data)->key_idx;
 	struct wg_peer *peer = NULL;
@@ -579,6 +599,17 @@ static void wg_packet_consume_data(struct wg_device *wg, struct sk_buff *skb)
 
 	if (unlikely(READ_ONCE(peer->is_dead)))
 		goto err;
+
+	if (peer->advanced_security) {
+		if (had_junk_offsets)
+			peer->junk_offsets = true;
+		else if (skb->len > MESSAGE_MINIMUM_LENGTH)
+			peer->junk_offsets = false;
+		/* Keepalives (skb->len == MESSAGE_MINIMUM_LENGTH) without
+		 * S4 junk don't trigger downgrade — some implementations
+		 * omit S4 junk from keepalive packets.
+		 */
+	}
 
 	ret = wg_queue_enqueue_per_device_and_peer(&wg->decrypt_queue, &peer->rx_queue, skb,
 						   wg->packet_crypt_wq);
@@ -598,7 +629,9 @@ err_keypair:
 
 void wg_packet_receive(struct wg_device *wg, struct sk_buff *skb)
 {
-	if (unlikely(prepare_skb_header(skb, wg) < 0))
+	bool had_junk_offsets = false;
+
+	if (unlikely(prepare_skb_header(skb, wg, &had_junk_offsets) < 0))
 		goto err;
 
 	if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_INIT]) ||
@@ -632,7 +665,7 @@ void wg_packet_receive(struct wg_device *wg, struct sk_buff *skb)
 	} else if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_TRANSPORT]) ||
 		   SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_DATA)) {
 		PACKET_CB(skb)->ds = ip_tunnel_get_dsfield(ip_hdr(skb), skb);
-		wg_packet_consume_data(wg, skb);
+		wg_packet_consume_data(wg, skb, had_junk_offsets);
 	} else {
 		WARN(1, "Non-exhaustive parsing of packet header lead to unknown packet type!\n");
 		goto err;

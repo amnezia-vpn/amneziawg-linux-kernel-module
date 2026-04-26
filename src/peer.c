@@ -41,6 +41,9 @@ struct wg_peer *wg_peer_create(struct wg_device *wg,
 	peer->ranged_headers = wg->advanced_security &&
 			       (wg->headers[MSGIDX_HANDSHAKE_INIT].start !=
 				wg->headers[MSGIDX_HANDSHAKE_INIT].end);
+	peer->junk_offsets = wg->advanced_security &&
+			     (wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] > 0 ||
+			      wg->junk_size[MSGIDX_TRANSPORT] > 0);
 	wg_noise_handshake_init(&peer->handshake, &wg->static_identity,
 				public_key, preshared_key, peer);
 	peer->internal_id = atomic64_inc_return(&peer_counter);

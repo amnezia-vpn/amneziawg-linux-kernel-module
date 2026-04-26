@@ -396,7 +396,8 @@ void wg_packet_encrypt_worker(struct work_struct *work)
 						  mh_peerheader(&wg->headers[MSGIDX_TRANSPORT],
 								PACKET_PEER(first)->ranged_headers) :
 						  MESSAGE_DATA,
-						  PACKET_PEER(first)->advanced_security ?
+						  (PACKET_PEER(first)->advanced_security &&
+						   PACKET_PEER(first)->junk_offsets) ?
 						  wg->junk_size[MSGIDX_TRANSPORT] : 0,
 						  skb,
 						  PACKET_CB(first)->keypair
