@@ -58,6 +58,7 @@ struct wg_peer {
 	bool timer_need_another_keepalive;
 	bool sent_lastminute_handshake;
 	struct timespec64 walltime_last_handshake;
+	struct timespec64 walltime_last_data;
 	struct kref refcount;
 	struct rcu_head rcu;
 	struct list_head peer_list;

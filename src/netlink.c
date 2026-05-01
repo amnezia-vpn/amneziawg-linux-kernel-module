@@ -323,6 +323,10 @@ get_peer(struct wg_peer *peer, struct sk_buff *skb, struct dump_ctx *ctx)
 			.tv_sec = peer->walltime_last_handshake.tv_sec,
 			.tv_nsec = peer->walltime_last_handshake.tv_nsec
 		};
+		const struct __kernel_timespec last_data = {
+			.tv_sec = peer->walltime_last_data.tv_sec,
+			.tv_nsec = peer->walltime_last_data.tv_nsec
+		};
 
 		down_read(&peer->handshake.lock);
 		fail = nla_put(skb, WGPEER_A_PRESHARED_KEY,
@@ -334,6 +338,8 @@ get_peer(struct wg_peer *peer, struct sk_buff *skb, struct dump_ctx *ctx)
 
 		if (nla_put(skb, WGPEER_A_LAST_HANDSHAKE_TIME,
 			    sizeof(last_handshake), &last_handshake) ||
+		    nla_put(skb, WGPEER_A_LAST_DATA_TIME,
+			    sizeof(last_data), &last_data) ||
 		    nla_put_u16(skb, WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL,
 				peer->persistent_keepalive_interval) ||
 		    nla_put_u64_64bit(skb, WGPEER_A_TX_BYTES, peer->tx_bytes,

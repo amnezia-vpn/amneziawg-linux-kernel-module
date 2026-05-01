@@ -474,6 +474,7 @@ static void wg_packet_consume_data_done(struct wg_peer *peer,
 		goto dishonest_packet_peer;
 
 	napi_gro_receive(&peer->napi, skb);
+	ktime_get_coarse_real_ts64(&peer->walltime_last_data);
 	update_rx_stats(peer, message_data_len(len_before_trim));
 	return;
 
