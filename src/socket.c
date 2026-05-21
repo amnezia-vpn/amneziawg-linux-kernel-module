@@ -2,7 +2,7 @@
 /*
  * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
-
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include "device.h"
 #include "peer.h"
 #include "socket.h"
