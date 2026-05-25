@@ -26,7 +26,7 @@ at least one line starting with `deb-src` is present and uncommented.
 4. Run `sudo add-apt-repository ppa:amnezia/ppa`.
 5. Finally execute `sudo apt-get install -y amneziawg`.
 
-### Debian
+### Debian 12
 
 Open `Terminal` and do next steps:
 
@@ -43,6 +43,47 @@ echo "deb-src https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main" | 
 sudo apt-get update
 sudo apt-get install -y amneziawg
 ```
+
+### Debian 13
+
+Open `Terminal` and do next steps:
+
+1. (Optionally) Upgrade your system to latest packages including latest available kernel by running `apt-get full-upgrade`.  
+   After kernel upgrade a reboot is required.  
+   ```bash
+   sudo apt-get full-upgrade -y
+   sudo reboot
+   ```
+
+2. Ensure that you have source repositories configured for APT.  
+   Open `/etc/apt/sources.list` in your editor (for example `sudo nano /etc/apt/sources.list`) and make sure there is at least one line starting with `deb-src` that is present and uncommented.
+
+3. Install required dependencies:  
+   ```bash
+   sudo apt-get install -y gnupg2 linux-headers-$(uname -r)
+   ```
+4. Execute following commands:
+   ```bash
+   sudo gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/amnezia-keyring.gpg \
+            --keyserver keyserver.ubuntu.com \
+            --recv-keys 57290828
+   ```
+
+   ```bash
+   sudo tee /etc/apt/sources.list.d/amnezia.sources <<EOF
+   Types: deb deb-src
+   URIs: https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu
+   Suites: focal
+   Components: main
+   Signed-By: /usr/share/keyrings/amnezia-keyring.gpg
+   EOF
+   ```
+   
+   ```shell
+   sudo apt-get update
+   sudo apt-get install -y amneziawg
+   ```
 
 ### Linux Mint
 
