@@ -4,7 +4,8 @@
 
 - [Installation](#installation)
   - [Ubuntu](#ubuntu)
-  - [Debian](#debian)
+  - [Debian 12](#debian12)
+  - [Debian 13](#debian13)
   - [Linux Mint](#linux-mint)
   - [RHEL/CentOS/SUSE/Fedora Core](#rhelcentossusefedora-core)
 - [Manual build](#manual-build)
@@ -26,7 +27,7 @@ at least one line starting with `deb-src` is present and uncommented.
 4. Run `sudo add-apt-repository ppa:amnezia/ppa`.
 5. Finally execute `sudo apt-get install -y amneziawg`.
 
-### Debian 12
+### Debian12
 
 Open `Terminal` and do next steps:
 
@@ -44,7 +45,7 @@ sudo apt-get update
 sudo apt-get install -y amneziawg
 ```
 
-### Debian 13
+### Debian13
 
 Open `Terminal` and do next steps:
 
@@ -82,6 +83,9 @@ Open `Terminal` and do next steps:
    
    ```shell
    sudo apt-get update
+   ```
+   
+   ```shell
    sudo apt-get install -y amneziawg
    ```
 
