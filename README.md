@@ -105,15 +105,35 @@ and link resulting tree to `kernel` symlink:
 
 ## Configuration
 
+### Configuration file path
+
+The configuration file must be located in the directory: `/etc/amnezia/amneziawg/`
+
+The configuration file name must comply with the following regular expression: `awg[0-9]+\.conf`
+
+### Configuration file content
+
 > [!IMPORTANT]
 > All parameters must be the same between Client and Server, except for Jc, Jmin, and Jmax - these may vary.
 
+#### `[Interface]` block:
 - Jc — 1 ≤ Jc ≤ 128; recommended range is from 4 to 12 inclusive
 - Jmin — Jmax > Jmin < 1280*; recommended value is 8
 - Jmax — Jmin < Jmax ≤ 1280*; recommended value is 80
 - S1 — S1 ≤ 1132* (1280* - 148 = 1132); S1 + 56 ≠ S2; recommended range is from 15 to 150 inclusive
 - S2 — S2 ≤ 1188* (1280* - 92 = 1188); recommended range is from 15 to 150 inclusive
 - H1/H2/H3/H4 — must be unique among each other; recommended range is from 5 to 2147483647 inclusive
+- Address — The IP address and subnet assigned to the local interface (e.g., 10.0.0.1/24).
+- DNS — DNS server(s) to use for name resolution when this interface is active.
+- PrivateKey — The private key of the local WireGuard interface (kept secret).
+
+#### `[Peer]` block
+
+- PublicKey — The public key of the remote peer (shared openly).
+- PresharedKey — An optional shared key for added encryption security between peers.
+- AllowedIPs — The list of IPs/routes allowed through the tunnel (e.g., 0.0.0.0/0 for all traffic).
+- Endpoint — The public IP address and port of the remote WireGuard peer.
+- PersistentKeepalive — Optional parameter to maintain the connection when behind NAT (value in seconds, e.g., 25).
 
 `* Assuming a basic internet connection with an MTU value of 1280.`
 
