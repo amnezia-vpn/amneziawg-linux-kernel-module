@@ -92,6 +92,12 @@
 #define ipv6_dst_lookup_flow(a, b, c, d) ipv6_dst_lookup(a, b, &dst, c) + (void *)0 ?: dst
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0)
+#define wg_ipv6_dst_lookup_flow(a, b, c, d) ip6_dst_lookup_flow(a, b, c, d)
+#else
+#define wg_ipv6_dst_lookup_flow(a, b, c, d) ipv6_stub->ipv6_dst_lookup_flow(a, b, c, d)
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 12, 0) && IS_ENABLED(CONFIG_IPV6) && !defined(ISRHEL7)
 #include <net/ipv6.h>
 struct ipv6_stub_type {
