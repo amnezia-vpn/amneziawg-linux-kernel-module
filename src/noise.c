@@ -626,15 +626,21 @@ wg_noise_handshake_consume_initiation(struct message_handshake_initiation *src,
 		static DEFINE_RATELIMIT_STATE(unknown_peer_notify_ratelimit,
 					      HZ, 10);
 
-		endpoint = kzalloc(sizeof(*endpoint), GFP_KERNEL);
-		if (unlikely(!endpoint))
-			goto out;
-		if (unlikely(wg_socket_endpoint_from_skb(endpoint, skb)))
-			goto out;
-
 		net_dbg_skb_ratelimited("%s: unknown peer from %pISpfsc\n", wg->dev->name, skb);
-		if (__ratelimit(&unknown_peer_notify_ratelimit))
+		/* Only allocate/populate the endpoint when we're actually going
+		 * to use it: under a flood of unknown-peer packets, __ratelimit()
+		 * rejects almost every call, and doing the kzalloc() +
+		 * wg_socket_endpoint_from_skb() first would mean paying that
+		 * cost on every rejected packet too.
+		 */
+		if (__ratelimit(&unknown_peer_notify_ratelimit)) {
+			endpoint = kzalloc(sizeof(*endpoint), GFP_KERNEL);
+			if (unlikely(!endpoint))
+				goto out;
+			if (unlikely(wg_socket_endpoint_from_skb(endpoint, skb)))
+				goto out;
 			wg_genl_mcast_peer_unknown(wg, s, endpoint, advanced_security);
+		}
 		goto out;
 	}
 	handshake = &peer->handshake;

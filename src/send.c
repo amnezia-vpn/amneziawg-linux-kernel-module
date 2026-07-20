@@ -30,7 +30,7 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 	struct wg_device *wg = peer->device;
 	void *buffer;
 	u8 ds;
-	u16 junk_packet_count, junk_packet_size;
+	u16 junk_packet_count, junk_packet_size, jmin, jmax;
 	int i;
 	struct jp_spec* spec;
 
@@ -62,11 +62,19 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 			    &peer->endpoint.addr);
 
 		junk_packet_count = wg->jc;
-		buffer = kzalloc(wg->jmax, GFP_KERNEL);
+		/* Snapshot jmin/jmax once: they're read without device_update_lock
+		 * here, and re-reading wg->jmax on every loop iteration (instead of
+		 * using the same value the buffer below was sized with) would let a
+		 * concurrent 'wg set ... jmax N' race this loop into writing past
+		 * the end of a buffer sized for the old, smaller jmax.
+		 */
+		jmin = wg->jmin;
+		jmax = wg->jmax;
+		buffer = kzalloc(jmax, GFP_KERNEL);
 
 		if (likely(buffer)) {
 			while (junk_packet_count-- > 0) {
-				junk_packet_size = (u16) get_random_u32_inclusive(wg->jmin, wg->jmax);
+				junk_packet_size = (u16) get_random_u32_inclusive(jmin, jmax);
 
 				get_random_bytes(buffer, junk_packet_size);
 				get_random_bytes(&ds, 1);
