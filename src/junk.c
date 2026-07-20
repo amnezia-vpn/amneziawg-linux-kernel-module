@@ -111,6 +111,8 @@ static int parse_r_tag(char* val, struct list_head* head) {
 
     if (!val || 0 > kstrtoint(val, 10, &len))
         return -EINVAL;
+    if (len < 0 || len > MESSAGE_MAX_SIZE)
+        return -EINVAL;
 
     tag = kzalloc(sizeof(*tag), GFP_KERNEL);
     if (!tag)
@@ -142,6 +144,8 @@ static int parse_rc_tag(char* val, struct list_head* head) {
 
     if (!val || 0 > kstrtoint(val, 10, &len))
         return -EINVAL;
+    if (len < 0 || len > MESSAGE_MAX_SIZE)
+        return -EINVAL;
 
     tag = kzalloc(sizeof(*tag), GFP_KERNEL);
     if (!tag)
@@ -168,6 +172,8 @@ static int parse_rd_tag(char* val, struct list_head* head) {
     int len;
 
     if (!val || 0 > kstrtoint(val, 10, &len))
+        return -EINVAL;
+    if (len < 0 || len > MESSAGE_MAX_SIZE)
         return -EINVAL;
 
     tag = kzalloc(sizeof(*tag), GFP_KERNEL);
@@ -289,7 +295,7 @@ int jp_spec_setup(struct jp_spec *spec) {
             ++mods_size;
     }
 
-    if (pkt_size > MESSAGE_MAX_SIZE) {
+    if (pkt_size < 0 || pkt_size > MESSAGE_MAX_SIZE) {
         err = -EINVAL;
         goto error;
     }
