@@ -54,7 +54,7 @@ static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg)
 	if (skb->len == wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] + MESSAGE_COOKIE_REPLY_SIZE) {
 		skb_pull(skb, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
 		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_COOKIE]))
-			return MESSAGE_HANDSHAKE_COOKIE;
+			return MESSAGE_COOKIE_REPLY_SIZE;
 		else
 			skb_push(skb, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
 	}
