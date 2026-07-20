@@ -64,15 +64,17 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 		junk_packet_count = wg->jc;
 		buffer = kzalloc(wg->jmax, GFP_KERNEL);
 
-		while (junk_packet_count-- > 0) {
-			junk_packet_size = (u16) get_random_u32_inclusive(wg->jmin, wg->jmax);
+		if (likely(buffer)) {
+			while (junk_packet_count-- > 0) {
+				junk_packet_size = (u16) get_random_u32_inclusive(wg->jmin, wg->jmax);
 
-			get_random_bytes(buffer, junk_packet_size);
-			get_random_bytes(&ds, 1);
-			wg_socket_send_buffer_to_peer(peer, buffer, junk_packet_size, ds, 0);
+				get_random_bytes(buffer, junk_packet_size);
+				get_random_bytes(&ds, 1);
+				wg_socket_send_buffer_to_peer(peer, buffer, junk_packet_size, ds, 0);
+			}
+
+			kfree(buffer);
 		}
-
-		kfree(buffer);
 	}
 
 	if (wg_noise_handshake_create_initiation(&packet, &peer->handshake, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_INIT]))) {

@@ -14,6 +14,7 @@
 #include "socket.h"
 
 #include <linux/rcupdate.h>
+#include <linux/ratelimit.h>
 #include <linux/slab.h>
 #include <linux/bitmap.h>
 #include <linux/scatterlist.h>
@@ -589,7 +590,7 @@ wg_noise_handshake_consume_initiation(struct message_handshake_initiation *src,
 {
 	struct wg_peer *peer = NULL, *ret_peer = NULL;
 	struct noise_handshake *handshake;
-	struct endpoint *endpoint = kzalloc(sizeof(*endpoint), GFP_KERNEL);
+	struct endpoint *endpoint = NULL;
 	bool replay_attack, flood_attack;
 	u8 key[NOISE_SYMMETRIC_KEY_LEN];
 	u8 chaining_key[NOISE_HASH_LEN];
@@ -622,11 +623,18 @@ wg_noise_handshake_consume_initiation(struct message_handshake_initiation *src,
 	/* Lookup which peer we're actually talking to */
 	peer = wg_pubkey_hashtable_lookup(wg->peer_hashtable, s);
 	if (!peer) {
+		static DEFINE_RATELIMIT_STATE(unknown_peer_notify_ratelimit,
+					      HZ, 10);
+
+		endpoint = kzalloc(sizeof(*endpoint), GFP_KERNEL);
+		if (unlikely(!endpoint))
+			goto out;
 		if (unlikely(wg_socket_endpoint_from_skb(endpoint, skb)))
 			goto out;
 
 		net_dbg_skb_ratelimited("%s: unknown peer from %pISpfsc\n", wg->dev->name, skb);
-		wg_genl_mcast_peer_unknown(wg, s, endpoint, advanced_security);
+		if (__ratelimit(&unknown_peer_notify_ratelimit))
+			wg_genl_mcast_peer_unknown(wg, s, endpoint, advanced_security);
 		goto out;
 	}
 	handshake = &peer->handshake;
