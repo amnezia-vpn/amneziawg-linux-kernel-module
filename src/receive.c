@@ -3,6 +3,7 @@
  * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
 
+#include "header_protection.h"
 #include "queueing.h"
 #include "device.h"
 #include "peer.h"
@@ -27,7 +28,16 @@ static void update_rx_stats(struct wg_peer *peer, size_t len)
 	peer->rx_bytes += len;
 }
 
-static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg)
+static __le32 awg_decoded_type(u8 data[4], u8 hash[4]) {
+	u8 buf[4];
+	buf[0] = data[0] ^ hash[0];
+	buf[1] = data[1] ^ hash[1];
+	buf[2] = data[2] ^ hash[2];
+	buf[3] = data[3] ^ hash[3];
+	return ((struct message_header*)buf)->type;
+}
+
+static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg, u8 hash[4])
 {
 	if (skb_is_nonlinear(skb) && unlikely(skb_linearize(skb))) {
 		net_dbg_skb_ratelimited("%s: non-linear sk_buff from %pISpfsc could not be linearized, dropping packet\n",
@@ -37,7 +47,7 @@ static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg)
 	
 	if (skb->len == wg->junk_size[MSGIDX_HANDSHAKE_INIT] + MESSAGE_INITIATION_SIZE) {
 		skb_pull(skb, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
-		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_INIT]))
+		if (mh_validate(awg_decoded_type(skb->data, hash), &wg->headers[MSGIDX_HANDSHAKE_INIT]))
 			return MESSAGE_INITIATION_SIZE;
 		else
 			skb_push(skb, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
@@ -45,7 +55,7 @@ static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg)
 
 	if (skb->len == wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE] + MESSAGE_RESPONSE_SIZE) {
 		skb_pull(skb, wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]);
-		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_RESPONSE]))
+		if (mh_validate(awg_decoded_type(skb->data, hash), &wg->headers[MSGIDX_HANDSHAKE_RESPONSE]))
 			return MESSAGE_RESPONSE_SIZE;
 		else
 			skb_push(skb, wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]);
@@ -53,18 +63,19 @@ static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg)
 
 	if (skb->len == wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] + MESSAGE_COOKIE_REPLY_SIZE) {
 		skb_pull(skb, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
-		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_COOKIE]))
-			return MESSAGE_HANDSHAKE_COOKIE;
+		if (mh_validate(awg_decoded_type(skb->data, hash), &wg->headers[MSGIDX_HANDSHAKE_COOKIE]))
+			return MESSAGE_COOKIE_REPLY_SIZE;
 		else
 			skb_push(skb, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
 	}
 
 	if (skb->len >= wg->junk_size[MSGIDX_TRANSPORT] + MESSAGE_TRANSPORT_SIZE) {
 		skb_pull(skb, wg->junk_size[MSGIDX_TRANSPORT]);
-		if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_TRANSPORT]))
+		if (mh_validate(awg_decoded_type(skb->data, hash), &wg->headers[MSGIDX_TRANSPORT])) {
 			return MESSAGE_TRANSPORT_SIZE;
-		else
+		} else {
 			skb_push(skb, wg->junk_size[MSGIDX_TRANSPORT]);
+		}
 	}
 
 	net_dbg_skb_ratelimited("%s: Unknown message from %pISpfsc encountered, packet dropped\n",
@@ -75,8 +86,11 @@ static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg)
 
 static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
 {
+	struct chacha_state state;
 	size_t data_offset, data_len, header_len;
+	u8 hash[4];
 	struct udphdr *udp;
+	bool protected;
 
 	if (unlikely(!wg_check_packet_protocol(skb) ||
 		     skb_transport_header(skb) < skb->head ||
@@ -108,13 +122,26 @@ static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
 	if (unlikely(skb->len != data_len))
 		/* Final len does not agree with calculated len */
 		return -EINVAL;
-	header_len = prepare_awg_message(skb, wg);
+
+	memset(hash, 0, sizeof(hash));
+	protected = awg_header_protection_init(&state, wg, skb->data);
+	if (protected) {
+		chacha20_crypt(&state, hash, hash, sizeof(hash));
+		state.x[12] = 0; // rewind counter to 0
+	}
+
+	header_len = prepare_awg_message(skb, wg, hash);
 	if (unlikely(!header_len))
 		return -EINVAL;
+
 	__skb_push(skb, data_offset);
 	if (unlikely(!pskb_may_pull(skb, data_offset + header_len)))
 		return -EINVAL;
 	__skb_pull(skb, data_offset);
+
+	if (protected)
+		chacha20_crypt(&state, skb->data, skb->data, header_len);
+
 	return 0;
 }
 

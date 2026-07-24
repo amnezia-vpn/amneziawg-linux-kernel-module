@@ -5,6 +5,7 @@
 
 #include "netlink.h"
 #include "device.h"
+#include "header_protection.h"
 #include "magic_header.h"
 #include "peer.h"
 #include "socket.h"
@@ -58,7 +59,14 @@ static const struct nla_policy device_policy[WGDEVICE_A_MAX + 1] = {
 	[WGDEVICE_A_I2]		= { .type = NLA_NUL_STRING },
 	[WGDEVICE_A_I3]		= { .type = NLA_NUL_STRING },
 	[WGDEVICE_A_I4]		= { .type = NLA_NUL_STRING },
-	[WGDEVICE_A_I5]		= { .type = NLA_NUL_STRING }
+	[WGDEVICE_A_I5]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_HEADER_PROTECTION_KEY] = NLA_POLICY_EXACT_LEN(NOISE_PUBLIC_KEY_LEN),
+	[WGDEVICE_A_CONTENT_PADDING_ADDITION] = { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_REKEY_AFTER_TIME] = { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_REKEY_TIMEOUT] = { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_REJECT_AFTER_TIME] = { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_KEEPALIVE_TIMEOUT] = { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS] = { .type = NLA_NUL_STRING },
 };
 
 static const struct nla_policy peer_policy[WGPEER_A_MAX + 1] = {
@@ -462,6 +470,16 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 			(wg->ispecs[4].desc &&
 				nla_put_string(skb, WGDEVICE_A_I5, wg->ispecs[4].desc)))
 			goto out;
+
+		down_read(&wg->header_protection.lock);
+		if (wg->header_protection.has_protection) {
+			awg_header_protection_get_key(&wg->header_protection, buf);
+			if (nla_put(skb, WGDEVICE_A_HEADER_PROTECTION_KEY, HEADER_PROTECTION_KEY_SIZE, buf)) {
+				up_read(&wg->header_protection.lock);
+				goto out;
+			}
+		}
+		up_read(&wg->header_protection.lock);
 
 		down_read(&wg->static_identity.lock);
 		if (wg->static_identity.has_identity) {
@@ -876,6 +894,11 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 		kfree(wg->ispecs[4].desc);
 		wg->ispecs[4].desc = nla_strdup(info->attrs[WGDEVICE_A_I5], GFP_KERNEL);
 	}
+
+	if (info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY] &&
+			nla_len(info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY]) == HEADER_PROTECTION_KEY_SIZE)
+		awg_header_protection_set_key(&wg->header_protection,
+			nla_data(info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY]));
 
 	if (flags & WGDEVICE_F_REPLACE_PEERS)
 		wg_peer_remove_all(wg);

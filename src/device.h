@@ -12,6 +12,7 @@
 #include "peerlookup.h"
 #include "cookie.h"
 #include "magic_header.h"
+#include "header_protection.h"
 
 #include <linux/types.h>
 #include <linux/netdevice.h>
@@ -52,6 +53,7 @@ struct wg_device {
 	struct allowedips peer_allowedips;
 	struct mutex device_update_lock, socket_update_lock;
 	struct list_head device_list, peer_list;
+	struct header_protection header_protection;
 	atomic_t handshake_queue_len;
 	unsigned int num_peers, device_update_gen;
 	u32 fwmark;

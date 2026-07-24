@@ -3,6 +3,7 @@
  * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
 
+#include "header_protection.h"
 #include "junk.h"
 #include "magic_header.h"
 #include "queueing.h"
@@ -207,14 +208,17 @@ static unsigned int calculate_skb_padding(struct sk_buff *skb)
 	return padded_size - last_unit;
 }
 
-static bool encrypt_packet(u32 message_type, size_t junk_size, struct sk_buff *skb, struct noise_keypair *keypair
-			   COMPAT_MAYBE_SIMD_CONTEXT(simd_context_t *simd_context))
+static bool encrypt_packet(struct wg_device *wg, struct sk_buff *skb, struct noise_keypair *keypair
+	COMPAT_MAYBE_SIMD_CONTEXT(simd_context_t *simd_context))
 {
 	unsigned int padding_len, plaintext_len, trailer_len;
 	struct scatterlist sg[MAX_SKB_FRAGS + 8];
+	struct chacha_state state;
 	struct message_data *header;
 	struct sk_buff *trailer;
+	char *crypto;
 	int num_frags;
+	int padding = wg->junk_size[MSGIDX_TRANSPORT];
 
 	/* Force hash calculation before encryption so that flow analysis is
 	 * consistent over the inner packet.
@@ -239,7 +243,7 @@ static bool encrypt_packet(u32 message_type, size_t junk_size, struct sk_buff *s
 	/* Expand head section to have room for our header and the network
 	 * stack's headers.
 	 */
-	if (unlikely(skb_cow_head(skb, DATA_PACKET_HEAD_ROOM + junk_size) < 0))
+	if (unlikely(skb_cow_head(skb, DATA_PACKET_HEAD_ROOM + padding) < 0))
 		return false;
 
 	/* Finalize checksum calculation for the inner packet, if required. */
@@ -252,16 +256,20 @@ static bool encrypt_packet(u32 message_type, size_t junk_size, struct sk_buff *s
 	 */
 	skb_set_inner_network_header(skb, 0);
 	header = (struct message_data *)skb_push(skb, sizeof(*header));
-	header->header.type = cpu_to_le32(message_type);
+	header->header.type = cpu_to_le32(mh_genheader(&wg->headers[MSGIDX_TRANSPORT]));
 	header->key_idx = keypair->remote_index;
 	header->counter = cpu_to_le64(PACKET_CB(skb)->nonce);
 	pskb_put(skb, trailer, trailer_len);
 
-	get_random_bytes(skb_push(skb, junk_size), junk_size);
+	crypto = skb_push(skb, padding);
+	get_random_bytes(crypto, padding);
+
+	if (awg_header_protection_init(&state, wg, crypto))
+		chacha20_crypt(&state, (u8*)header, (u8*)header, sizeof(*header));
 
 	/* Now we can encrypt the scattergather segments */
 	sg_init_table(sg, num_frags);
-	if (skb_to_sgvec(skb, sg, sizeof(struct message_data) + junk_size,
+	if (skb_to_sgvec(skb, sg, sizeof(struct message_data) + padding,
 			 noise_encrypted_len(plaintext_len)) <= 0)
 		return false;
 	return chacha20poly1305_encrypt_sg_inplace(sg, plaintext_len, NULL, 0,
@@ -354,8 +362,7 @@ void wg_packet_encrypt_worker(struct work_struct *work)
 			wg = PACKET_PEER(first)->device;
 
 			if (likely(encrypt_packet(
-						  mh_genheader(&wg->headers[MSGIDX_TRANSPORT]),
-						  wg->junk_size[MSGIDX_TRANSPORT],
+						  wg,
 						  skb,
 						  PACKET_CB(first)->keypair
 						  COMPAT_MAYBE_SIMD_CONTEXT(&simd_context)))) {

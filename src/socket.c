@@ -4,6 +4,7 @@
  */
 
 #include "device.h"
+#include "header_protection.h"
 #include "peer.h"
 #include "socket.h"
 #include "queueing.h"
@@ -186,19 +187,26 @@ int wg_socket_send_skb_to_peer(struct wg_peer *peer, struct sk_buff *skb, u8 ds)
 }
 
 int wg_socket_send_buffer_to_peer(struct wg_peer *peer, void *buffer,
-				  size_t len, u8 ds, size_t junk_size)
+				  size_t len, u8 ds, size_t padding)
 {
-	void* junk;
-	struct sk_buff *skb = alloc_skb(len + junk_size + SKB_HEADER_LEN, GFP_ATOMIC);
+	struct sk_buff *skb = alloc_skb(len + padding + SKB_HEADER_LEN, GFP_ATOMIC);
+	void* crypto;
+	struct chacha_state state;
 
 	if (unlikely(!skb))
 		return -ENOMEM;
 
 	skb_reserve(skb, SKB_HEADER_LEN);
 	skb_set_inner_network_header(skb, 0);
-	junk = skb_put(skb, junk_size);
-	get_random_bytes(junk, junk_size);
-	skb_put_data(skb, buffer, len);
+
+	crypto = skb_put(skb, padding);
+	get_random_bytes(crypto, padding);
+
+	buffer = skb_put_data(skb, buffer, len);
+	if (padding != 0 &&
+			awg_header_protection_init(&state, peer->device, crypto))
+		chacha20_crypt(&state, buffer, buffer, len);
+
 	return wg_socket_send_skb_to_peer(peer, skb, ds);
 }
 

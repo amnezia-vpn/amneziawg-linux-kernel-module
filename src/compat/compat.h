@@ -1415,4 +1415,9 @@ static inline struct dst_entry *ip6_dst_lookup_flow(struct net *net, const struc
 }
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+#ifndef CHACHA_KEY_WORDS
+#define CHACHA_KEY_WORDS (CHACHA_KEY_SIZE / sizeof(u32))
+#endif
+
 #endif /* _WG_COMPAT_H */
