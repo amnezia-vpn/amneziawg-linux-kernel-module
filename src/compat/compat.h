@@ -1407,4 +1407,12 @@ static inline char *nla_strdup(const struct nlattr *nla, gfp_t flags)
 	blake2s(out, in, key, outlen, inlen, keylen)
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 1, 0) && !IS_ENABLED(CONFIG_IPV6)
+#include <net/ipv6_stubs.h>
+static inline struct dst_entry *ip6_dst_lookup_flow(struct net *net, const struct sock *sk, struct flowi6 *fl6,
+				      const struct in6_addr *final_dst) {
+	return ipv6_stub->ipv6_dst_lookup_flow(net, sk, fl6, final_dst);
+}
+#endif
+
 #endif /* _WG_COMPAT_H */
