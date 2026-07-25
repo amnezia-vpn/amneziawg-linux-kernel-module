@@ -39,12 +39,6 @@ static __le32 awg_decoded_type(u8 data[4], u8 hash[4]) {
 
 static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg, u8 hash[4])
 {
-	if (skb_is_nonlinear(skb) && unlikely(skb_linearize(skb))) {
-		net_dbg_skb_ratelimited("%s: non-linear sk_buff from %pISpfsc could not be linearized, dropping packet\n",
-								wg->dev->name, skb);
-		return 0;
-	}
-	
 	if (skb->len == wg->junk_size[MSGIDX_HANDSHAKE_INIT] + MESSAGE_INITIATION_SIZE) {
 		skb_pull(skb, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
 		if (mh_validate(awg_decoded_type(skb->data, hash), &wg->headers[MSGIDX_HANDSHAKE_INIT]))
@@ -71,11 +65,10 @@ static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg, u8 
 
 	if (skb->len >= wg->junk_size[MSGIDX_TRANSPORT] + MESSAGE_TRANSPORT_SIZE) {
 		skb_pull(skb, wg->junk_size[MSGIDX_TRANSPORT]);
-		if (mh_validate(awg_decoded_type(skb->data, hash), &wg->headers[MSGIDX_TRANSPORT])) {
+		if (mh_validate(awg_decoded_type(skb->data, hash), &wg->headers[MSGIDX_TRANSPORT]))
 			return MESSAGE_TRANSPORT_SIZE;
-		} else {
+		else
 			skb_push(skb, wg->junk_size[MSGIDX_TRANSPORT]);
-		}
 	}
 
 	net_dbg_skb_ratelimited("%s: Unknown message from %pISpfsc encountered, packet dropped\n",
@@ -122,6 +115,13 @@ static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
 	if (unlikely(skb->len != data_len))
 		/* Final len does not agree with calculated len */
 		return -EINVAL;
+
+	// FIXME(ygurov): get rid of linearization in favour of local pulls
+	if (skb_is_nonlinear(skb) && unlikely(skb_linearize(skb))) {
+		net_dbg_skb_ratelimited("%s: non-linear sk_buff from %pISpfsc could not be linearized, dropping packet\n",
+								wg->dev->name, skb);
+		return -EINVAL;
+	}
 
 	memset(hash, 0, sizeof(hash));
 	protected = awg_header_protection_init(&state, wg, skb->data);
