@@ -1444,4 +1444,10 @@ static inline void __compat_chacha20_crypt(struct chacha_state *state,
 
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 1, 5)
+#include <net/udp_tunnel.h>
+#define setup_udp_tunnel_sock(net, sk, sock_cfg) setup_udp_tunnel_sock(net, sk->sk_socket, sock_cfg)
+#define udp_tunnel_sock_release(sk) udp_tunnel_sock_release(sk->sk_socket)
+#endif
+
 #endif /* _WG_COMPAT_H */
