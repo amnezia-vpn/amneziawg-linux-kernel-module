@@ -2,7 +2,7 @@
 /*
  * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
-
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #ifdef COMPAT_CANNOT_DEPRECIATE_BH_RCU
 /* We normally alias all non-_bh functions to the _bh ones in the compat layer,
  * but that's not appropriate here, where we actually do want non-_bh ones.

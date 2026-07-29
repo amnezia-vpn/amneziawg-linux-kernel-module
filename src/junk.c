@@ -1,3 +1,4 @@
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include "junk.h"
 #include "messages.h"
 #include "peer.h"
