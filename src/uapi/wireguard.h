@@ -118,6 +118,19 @@
  *            WGPEER_A_ADVANCED_SECURITY: flag indicating that advanced security
  *                                       techniques provided by AmneziaWG should
  *                                       be used.
+ *            WGPEER_A_RANGED_HEADERS: flag indicating that the peer supports
+ *                                     ranged (AWG 2.0) magic headers rather
+ *                                     than fixed (AWG 1.0) values.
+ *            WGPEER_A_JUNK_OFFSETS: flag indicating that the peer uses S3-S4
+ *                                   junk padding on cookie and transport
+ *                                   packets.
+ *            WGPEER_A_LAST_DATA_TIME: struct __kernel_timespec, wall clock
+ *                                     time of last successfully decrypted
+ *                                     non-keepalive data packet from this
+ *                                     peer. Zero if no data received yet.
+ *                                     Compare with WGPEER_A_LAST_HANDSHAKE_TIME
+ *                                     to determine if junk_offsets has been
+ *                                     confirmed since the last handshake.
  *        0: NLA_NESTED
  *            ...
  *        ...
@@ -228,6 +241,9 @@ enum wgpeer_attribute {
 	WGPEER_A_ALLOWEDIPS,
 	WGPEER_A_PROTOCOL_VERSION,
 	WGPEER_A_ADVANCED_SECURITY,
+	WGPEER_A_RANGED_HEADERS,
+	WGPEER_A_JUNK_OFFSETS,
+	WGPEER_A_LAST_DATA_TIME,
 	__WGPEER_A_LAST
 };
 #define WGPEER_A_MAX (__WGPEER_A_LAST - 1)

@@ -58,6 +58,7 @@ struct wg_peer {
 	bool timer_need_another_keepalive;
 	bool sent_lastminute_handshake;
 	struct timespec64 walltime_last_handshake;
+	struct timespec64 walltime_last_data;
 	struct kref refcount;
 	struct rcu_head rcu;
 	struct list_head peer_list;
@@ -66,6 +67,8 @@ struct wg_peer {
 	u64 internal_id;
 	atomic_t jp_packet_counter;
 	bool advanced_security;
+	bool ranged_headers;
+	bool junk_offsets;
 };
 
 struct wg_peer *wg_peer_create(struct wg_device *wg,
