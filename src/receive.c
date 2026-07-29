@@ -67,6 +67,20 @@ static size_t prepare_awg_message(struct sk_buff *skb, struct wg_device *wg)
 			skb_push(skb, wg->junk_size[MSGIDX_TRANSPORT]);
 	}
 
+	/* Legacy WireGuard client support: accept standard packets */
+	if (skb->len == MESSAGE_INITIATION_SIZE &&
+	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_INITIATION))
+		return MESSAGE_INITIATION_SIZE;
+	if (skb->len == MESSAGE_RESPONSE_SIZE &&
+	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_RESPONSE))
+		return MESSAGE_RESPONSE_SIZE;
+	if (skb->len == MESSAGE_COOKIE_REPLY_SIZE &&
+	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_COOKIE))
+		return MESSAGE_COOKIE_REPLY_SIZE;
+	if (skb->len >= MESSAGE_MINIMUM_LENGTH &&
+	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_DATA))
+		return MESSAGE_TRANSPORT_SIZE;
+
 	net_dbg_skb_ratelimited("%s: Unknown message from %pISpfsc encountered, packet dropped\n",
 								wg->dev->name, skb);
 
@@ -130,7 +144,8 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 	bool packet_needs_cookie;
 	bool under_load;
 
-	if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_COOKIE])) {
+	if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_COOKIE]) ||
+	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_COOKIE)) {
 		net_dbg_skb_ratelimited("%s: Receiving cookie response from %pISpfsc\n",
 					wg->dev->name, skb);
 		wg_cookie_message_consume(
@@ -160,7 +175,8 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 		return;
 	}
 
-	if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_INIT])) {
+	if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_INIT]) ||
+	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_INITIATION)) {
 		struct message_handshake_initiation *message =
 			(struct message_handshake_initiation *)skb->data;
 
@@ -181,7 +197,8 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 				    &peer->endpoint.addr);
 		wg_packet_send_handshake_response(peer);
 	}
-	if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_RESPONSE])) {
+	if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_RESPONSE]) ||
+	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_RESPONSE)) {
 		struct message_handshake_response *message =
 			(struct message_handshake_response *)skb->data;
 
@@ -585,8 +602,11 @@ void wg_packet_receive(struct wg_device *wg, struct sk_buff *skb)
 		goto err;
 
 	if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_INIT]) ||
-		mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_RESPONSE]) ||
-		mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_COOKIE])) {
+	    mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_RESPONSE]) ||
+	    mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_COOKIE]) ||
+	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_INITIATION) ||
+	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_RESPONSE) ||
+	    SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_COOKIE)) {
 		int cpu, ret = -EBUSY;
 
 		if (unlikely(!rng_is_initialized()))
@@ -609,7 +629,8 @@ void wg_packet_receive(struct wg_device *wg, struct sk_buff *skb)
 		/* Queues up a call to packet_process_queued_handshake_packets(skb): */
 		queue_work_on(cpu, wg->handshake_receive_wq,
 			      &per_cpu_ptr(wg->handshake_queue.worker, cpu)->work);
-	} else if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_TRANSPORT])) {
+	} else if (mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_TRANSPORT]) ||
+		   SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_DATA)) {
 		PACKET_CB(skb)->ds = ip_tunnel_get_dsfield(ip_hdr(skb), skb);
 		wg_packet_consume_data(wg, skb);
 	} else {

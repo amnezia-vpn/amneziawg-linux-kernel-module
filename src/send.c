@@ -43,46 +43,53 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 			    peer->device->dev->name, peer->internal_id,
 			    &peer->endpoint.addr);
 
-	atomic_set(&peer->jp_packet_counter, get_random_u32());
-	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i)
-	{
-		spec = &wg->ispecs[i];
-		if (spec->pkt_size > 0) {
-			mutex_lock(&spec->lock);
-			jp_spec_applymods(spec, peer);
-			wg_socket_send_buffer_to_peer(peer, spec->pkt, spec->pkt_size, 0, 0);
-			atomic_inc(&peer->jp_packet_counter);
-			mutex_unlock(&spec->lock);
-		}
-	}
-	
-	if (wg->jc && wg->jmax) {
-		net_dbg_ratelimited("%s: Sending dummy junk packets to %llu (%pISpfsc)\n",
-			    peer->device->dev->name, peer->internal_id,
-			    &peer->endpoint.addr);
-
-		junk_packet_count = wg->jc;
-		buffer = kzalloc(wg->jmax, GFP_KERNEL);
-
-		while (junk_packet_count-- > 0) {
-			junk_packet_size = (u16) get_random_u32_inclusive(wg->jmin, wg->jmax);
-
-			get_random_bytes(buffer, junk_packet_size);
-			get_random_bytes(&ds, 1);
-			wg_socket_send_buffer_to_peer(peer, buffer, junk_packet_size, ds, 0);
+	if (peer->advanced_security) {
+		atomic_set(&peer->jp_packet_counter, get_random_u32());
+		for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i) {
+			spec = &wg->ispecs[i];
+			if (spec->pkt_size > 0) {
+				mutex_lock(&spec->lock);
+				jp_spec_applymods(spec, peer);
+				wg_socket_send_buffer_to_peer(peer, spec->pkt, spec->pkt_size, 0, 0);
+				atomic_inc(&peer->jp_packet_counter);
+				mutex_unlock(&spec->lock);
+			}
 		}
 
-		kfree(buffer);
+		if (wg->jc && wg->jmax) {
+			net_dbg_ratelimited("%s: Sending dummy junk packets to %llu (%pISpfsc)\n",
+					    peer->device->dev->name, peer->internal_id,
+					    &peer->endpoint.addr);
+
+			junk_packet_count = wg->jc;
+			buffer = kzalloc(wg->jmax, GFP_KERNEL);
+
+			while (junk_packet_count-- > 0) {
+				junk_packet_size = (u16) get_random_u32_inclusive(wg->jmin, wg->jmax);
+
+				get_random_bytes(buffer, junk_packet_size);
+				get_random_bytes(&ds, 1);
+				wg_socket_send_buffer_to_peer(peer, buffer, junk_packet_size, ds, 0);
+			}
+
+			kfree(buffer);
+		}
 	}
 
-	if (wg_noise_handshake_create_initiation(&packet, &peer->handshake, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_INIT]))) {
+	if (wg_noise_handshake_create_initiation(&packet, &peer->handshake,
+			peer->advanced_security ?
+			mh_peerheader(&wg->headers[MSGIDX_HANDSHAKE_INIT],
+				      peer->ranged_headers) :
+			MESSAGE_HANDSHAKE_INITIATION)) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);
 		wg_timers_any_authenticated_packet_traversal(peer);
 		wg_timers_any_authenticated_packet_sent(peer);
 		atomic64_set(&peer->last_sent_handshake,
 			     ktime_get_coarse_boottime_ns());
 		wg_socket_send_buffer_to_peer(peer, &packet, sizeof(packet),
-					      HANDSHAKE_DSCP, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
+					      HANDSHAKE_DSCP,
+					      peer->advanced_security ?
+					      wg->junk_size[MSGIDX_HANDSHAKE_INIT] : 0);
 		wg_timers_handshake_initiated(peer);
 	}
 }
@@ -136,7 +143,11 @@ void wg_packet_send_handshake_response(struct wg_peer *peer)
 			    peer->device->dev->name, peer->internal_id,
 			    &peer->endpoint.addr);
 
-	if (wg_noise_handshake_create_response(&packet, &peer->handshake, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE]))) {
+	if (wg_noise_handshake_create_response(&packet, &peer->handshake,
+			peer->advanced_security ?
+			mh_peerheader(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE],
+				      peer->ranged_headers) :
+			MESSAGE_HANDSHAKE_RESPONSE)) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);
 		if (wg_noise_handshake_begin_session(&peer->handshake,
 						     &peer->keypairs)) {
@@ -148,7 +159,8 @@ void wg_packet_send_handshake_response(struct wg_peer *peer)
 			wg_socket_send_buffer_to_peer(peer, &packet,
 						      sizeof(packet),
 						      HANDSHAKE_DSCP,
-							  wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]);
+						      peer->advanced_security ?
+						      wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE] : 0);
 		}
 	}
 }
@@ -158,15 +170,41 @@ void wg_packet_send_handshake_cookie(struct wg_device *wg,
 				     __le32 sender_index)
 {
 	struct message_handshake_cookie packet;
+	__le32 type = SKB_TYPE_LE32(initiating_skb);
+	u32 host_type = le32_to_cpu(type);
+	bool is_legacy, is_ranged;
+	u32 cookie_header;
+	size_t cookie_junk;
+
+	is_legacy = (type == cpu_to_le32(MESSAGE_HANDSHAKE_INITIATION) ||
+		     type == cpu_to_le32(MESSAGE_HANDSHAKE_RESPONSE));
+
+	/* Detect AWG 2.0 vs 1.0: if the incoming header is not at the
+	 * start of its range, the peer must support ranged headers.
+	 */
+	is_ranged = false;
+	if (!is_legacy) {
+		if (mh_validate(type, &wg->headers[MSGIDX_HANDSHAKE_INIT]))
+			is_ranged = (host_type != wg->headers[MSGIDX_HANDSHAKE_INIT].start);
+		else if (mh_validate(type, &wg->headers[MSGIDX_HANDSHAKE_RESPONSE]))
+			is_ranged = (host_type != wg->headers[MSGIDX_HANDSHAKE_RESPONSE].start);
+	}
+
+	if (is_legacy) {
+		cookie_header = MESSAGE_HANDSHAKE_COOKIE;
+		cookie_junk = 0;
+	} else {
+		cookie_header = mh_peerheader(&wg->headers[MSGIDX_HANDSHAKE_COOKIE],
+					      is_ranged);
+		cookie_junk = wg->junk_size[MSGIDX_HANDSHAKE_COOKIE];
+	}
 
 	net_dbg_skb_ratelimited("%s: Sending cookie response for denied handshake message for %pISpfsc\n",
 				wg->dev->name, initiating_skb);
 	wg_cookie_message_create(&packet, initiating_skb, sender_index,
-				 &wg->cookie_checker,
-				 mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_COOKIE]));
-	wg_socket_send_buffer_as_reply_to_skb(wg, initiating_skb, &packet,
-					      sizeof(packet),
-						  wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
+				 &wg->cookie_checker, cookie_header);
+	wg_socket_send_buffer_as_reply_to_skb(wg, initiating_skb,
+					      &packet, sizeof(packet), cookie_junk);
 }
 
 static void keep_key_fresh(struct wg_peer *peer)
@@ -354,8 +392,12 @@ void wg_packet_encrypt_worker(struct work_struct *work)
 			wg = PACKET_PEER(first)->device;
 
 			if (likely(encrypt_packet(
-						  mh_genheader(&wg->headers[MSGIDX_TRANSPORT]),
-						  wg->junk_size[MSGIDX_TRANSPORT],
+						  PACKET_PEER(first)->advanced_security ?
+						  mh_peerheader(&wg->headers[MSGIDX_TRANSPORT],
+								PACKET_PEER(first)->ranged_headers) :
+						  MESSAGE_DATA,
+						  PACKET_PEER(first)->advanced_security ?
+						  wg->junk_size[MSGIDX_TRANSPORT] : 0,
 						  skb,
 						  PACKET_CB(first)->keypair
 						  COMPAT_MAYBE_SIMD_CONTEXT(&simd_context)))) {
