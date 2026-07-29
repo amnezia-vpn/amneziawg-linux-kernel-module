@@ -191,11 +191,13 @@ static inline int generate_ipv4_address_with_prefix(const struct ipv4_prefix *pr
 
 	prefix_host_order = ntohl(prefix->prefix);
 
-	if (prefix->prefix_len == 32) {
-		suffix_mask = 0;
-	} else {
-		suffix_mask = (1U << (32 - prefix->prefix_len)) - 1;
-	}
+	/* Compute in 64 bits so the shift (by up to 32) is always
+	 * well-defined, then narrow back to u32; prefix_len == 32 yields
+	 * (1ULL << 0) - 1 == 0 and prefix_len == 0 yields
+	 * (1ULL << 32) - 1 == 0xFFFFFFFF, both handled by this one
+	 * expression without a shift-by-width-of-type edge case.
+	 */
+	suffix_mask = (u32)((1ULL << (32 - prefix->prefix_len)) - 1);
 
 	get_random_bytes(&random_suffix, sizeof(random_suffix));
 	random_suffix &= suffix_mask;
