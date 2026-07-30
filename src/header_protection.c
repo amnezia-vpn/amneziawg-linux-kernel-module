@@ -3,6 +3,15 @@
 
 #include <crypto/chacha.h>
 
+inline bool awg_has_header_protection(struct wg_device *wg) {
+	struct header_protection* p = &wg->header_protection;
+	bool res;
+	down_read(&p->lock);
+	res = p->has_protection;
+	up_read(&p->lock);
+	return res;
+}
+
 bool awg_header_protection_init(struct chacha_state *state, struct wg_device *wg, u8 *nonce) {
 	struct header_protection* p = &wg->header_protection;
 	bool res = false;

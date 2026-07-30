@@ -5,7 +5,6 @@
 
 #include "header_protection.h"
 #include "junk.h"
-#include "magic_header.h"
 #include "queueing.h"
 #include "timers.h"
 #include "device.h"
@@ -13,6 +12,7 @@
 #include "socket.h"
 #include "messages.h"
 #include "cookie.h"
+#include "type.h"
 
 #ifdef COMPAT_CRYPTO_IS_ZINC
 #include <linux/simd.h>
@@ -76,14 +76,15 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 		kfree(buffer);
 	}
 
-	if (wg_noise_handshake_create_initiation(&packet, &peer->handshake, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_INIT]))) {
+	if (wg_noise_handshake_create_initiation(&packet, &peer->handshake,
+			u32_range_pick_one(READ_ONCE(wg->init_header)))) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);
 		wg_timers_any_authenticated_packet_traversal(peer);
 		wg_timers_any_authenticated_packet_sent(peer);
 		atomic64_set(&peer->last_sent_handshake,
 			     ktime_get_coarse_boottime_ns());
 		wg_socket_send_buffer_to_peer(peer, &packet, sizeof(packet),
-					      HANDSHAKE_DSCP, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
+					      HANDSHAKE_DSCP, READ_ONCE(wg->init_padding));
 		wg_timers_handshake_initiated(peer);
 	}
 }
@@ -137,7 +138,8 @@ void wg_packet_send_handshake_response(struct wg_peer *peer)
 			    peer->device->dev->name, peer->internal_id,
 			    &peer->endpoint.addr);
 
-	if (wg_noise_handshake_create_response(&packet, &peer->handshake, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE]))) {
+	if (wg_noise_handshake_create_response(&packet, &peer->handshake,
+			u32_range_pick_one(READ_ONCE(wg->resp_header)))) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);
 		if (wg_noise_handshake_begin_session(&peer->handshake,
 						     &peer->keypairs)) {
@@ -149,7 +151,7 @@ void wg_packet_send_handshake_response(struct wg_peer *peer)
 			wg_socket_send_buffer_to_peer(peer, &packet,
 						      sizeof(packet),
 						      HANDSHAKE_DSCP,
-							  wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]);
+							  READ_ONCE(wg->resp_padding));
 		}
 	}
 }
@@ -164,10 +166,10 @@ void wg_packet_send_handshake_cookie(struct wg_device *wg,
 				wg->dev->name, initiating_skb);
 	wg_cookie_message_create(&packet, initiating_skb, sender_index,
 				 &wg->cookie_checker,
-				 mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_COOKIE]));
+				 u32_range_pick_one(READ_ONCE(wg->cookie_header)));
 	wg_socket_send_buffer_as_reply_to_skb(wg, initiating_skb, &packet,
 					      sizeof(packet),
-						  wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
+						  READ_ONCE(wg->cookie_padding));
 }
 
 static void keep_key_fresh(struct wg_peer *peer)
@@ -218,7 +220,7 @@ static bool encrypt_packet(struct wg_device *wg, struct sk_buff *skb, struct noi
 	struct sk_buff *trailer;
 	char *crypto;
 	int num_frags;
-	int padding = wg->junk_size[MSGIDX_TRANSPORT];
+	int padding = READ_ONCE(wg->transport_padding);
 
 	/* Force hash calculation before encryption so that flow analysis is
 	 * consistent over the inner packet.
@@ -256,7 +258,7 @@ static bool encrypt_packet(struct wg_device *wg, struct sk_buff *skb, struct noi
 	 */
 	skb_set_inner_network_header(skb, 0);
 	header = (struct message_data *)skb_push(skb, sizeof(*header));
-	header->header.type = cpu_to_le32(mh_genheader(&wg->headers[MSGIDX_TRANSPORT]));
+	header->header.type = cpu_to_le32(u32_range_pick_one(READ_ONCE(wg->transport_header)));
 	header->key_idx = keypair->remote_index;
 	header->counter = cpu_to_le64(PACKET_CB(skb)->nonce);
 	pskb_put(skb, trailer, trailer_len);

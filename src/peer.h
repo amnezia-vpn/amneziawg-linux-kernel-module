@@ -40,6 +40,8 @@ struct wg_peer {
 	struct sk_buff_head staged_packet_queue;
 	int serial_work_cpu;
 	bool is_dead;
+	bool timer_need_another_keepalive;
+	bool sent_lastminute_handshake;
 	struct noise_keypairs keypairs;
 	struct endpoint endpoint;
 	struct dst_cache endpoint_cache;
@@ -54,9 +56,7 @@ struct wg_peer {
 	struct timer_list timer_new_handshake, timer_zero_key_material;
 	struct timer_list timer_persistent_keepalive;
 	unsigned int timer_handshake_attempts;
-	u16 persistent_keepalive_interval;
-	bool timer_need_another_keepalive;
-	bool sent_lastminute_handshake;
+	u32 persistent_keepalive_interval;
 	struct timespec64 walltime_last_handshake;
 	struct kref refcount;
 	struct rcu_head rcu;
@@ -65,7 +65,6 @@ struct wg_peer {
 	struct napi_struct napi;
 	u64 internal_id;
 	atomic_t jp_packet_counter;
-	bool advanced_security;
 };
 
 struct wg_peer *wg_peer_create(struct wg_device *wg,

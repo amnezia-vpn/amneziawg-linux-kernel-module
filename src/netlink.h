@@ -14,7 +14,7 @@ extern char *bogus_endpoints_prefix;
 extern char *bogus_endpoints_prefix6;
 
 int wg_genl_mcast_peer_unknown(struct wg_device *wg, const u8 pubkey[NOISE_PUBLIC_KEY_LEN],
-	                           struct endpoint *endpoint, bool advanced_security);
+	                           struct endpoint *endpoint);
 int wg_genetlink_init(void);
 void wg_genetlink_uninit(void);
 

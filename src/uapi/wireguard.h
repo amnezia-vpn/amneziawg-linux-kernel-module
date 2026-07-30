@@ -158,7 +158,7 @@
 #define _WG_UAPI_WIREGUARD_H
 
 #define WG_GENL_NAME "amneziawg"
-#define WG_GENL_VERSION 2
+#define WG_GENL_VERSION 3
 
 #define WG_KEY_LEN 32
 

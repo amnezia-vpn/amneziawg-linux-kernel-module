@@ -28,16 +28,16 @@ struct jp_modifier
 
 struct jp_spec
 {
-    char* desc;
-    u8* pkt;
-    struct jp_modifier* mods;
+    char *desc;
+    u8 *pkt;
+    struct jp_modifier *mods;
     struct mutex lock;
     int pkt_size;
     int mods_size;
 };
 
 void jp_spec_free(struct jp_spec* spec);
-int jp_spec_setup(struct jp_spec* spec);
+int jp_spec_setup(struct jp_spec* spec, const char* desc);
 void jp_spec_applymods(struct jp_spec* spec, struct wg_peer* peer);
 
 #endif
