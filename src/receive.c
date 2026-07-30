@@ -44,40 +44,40 @@ static inline size_t awg_determine_type_and_padding(struct sk_buff *skb,
 	u8 buf[4];
 	u16 padding;
 
-	padding = READ_ONCE(wg->init_padding);
+	padding = wg->init_padding;
 	if (skb->len == padding + sizeof(struct message_handshake_initiation) &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
-		u32_range_contains(READ_ONCE(wg->init_header),
+		u32_range_contains(wg->init_header,
 			awg_decoded_type(ptr, hash))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_INITIATION;
 		return sizeof(struct message_handshake_initiation);
 	}
 
-	padding = READ_ONCE(wg->resp_padding);
+	padding = wg->resp_padding;
 	if (skb->len == padding + sizeof(struct message_handshake_response) &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
-		u32_range_contains(READ_ONCE(wg->resp_header),
+		u32_range_contains(wg->resp_header,
 			awg_decoded_type(ptr, hash))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_RESPONSE;
 		return sizeof(struct message_handshake_response);
 	}
 
-	padding = READ_ONCE(wg->cookie_padding);
+	padding = wg->cookie_padding;
 	if (skb->len == padding + sizeof(struct message_handshake_cookie) &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
-		u32_range_contains(READ_ONCE(wg->cookie_header), 
+		u32_range_contains(wg->cookie_header, 
 			awg_decoded_type(ptr, hash))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_COOKIE;
 		return sizeof(struct message_handshake_cookie);
 	}
 
-	padding = READ_ONCE(wg->transport_padding);
+	padding = wg->transport_padding;
 	if (skb->len >= padding + MESSAGE_MINIMUM_LENGTH &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
-		u32_range_contains(READ_ONCE(wg->transport_header),
+		u32_range_contains(wg->transport_header,
 			awg_decoded_type(ptr, hash))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_DATA;
