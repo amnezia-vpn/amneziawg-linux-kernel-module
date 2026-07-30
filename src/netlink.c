@@ -722,11 +722,11 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 		const u16_range_t persistent_keepalive_interval = nla_get_u32(
 				attrs[WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL]);
 		const bool send_keepalive =
-			u16_range_is_zero(READ_ONCE(peer->persistent_keepalive_interval)) &&
+			u16_range_is_zero(peer->persistent_keepalive_interval) &&
 			!u16_range_is_zero(persistent_keepalive_interval) &&
 			netif_running(wg->dev);
 
-		WRITE_ONCE(peer->persistent_keepalive_interval, persistent_keepalive_interval);
+		peer->persistent_keepalive_interval = persistent_keepalive_interval;
 		if (send_keepalive)
 			wg_packet_send_keepalive(peer);
 	}
@@ -791,13 +791,13 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[WGDEVICE_A_JC])
-		WRITE_ONCE(wg->jc, nla_get_u16(info->attrs[WGDEVICE_A_JC]));
+		wg->jc = nla_get_u16(info->attrs[WGDEVICE_A_JC]);
 
 	if (info->attrs[WGDEVICE_A_JMIN])
-		WRITE_ONCE(wg->jmin, nla_get_u16(info->attrs[WGDEVICE_A_JMIN]));
+		wg->jmin = nla_get_u16(info->attrs[WGDEVICE_A_JMIN]);
 
 	if (info->attrs[WGDEVICE_A_JMAX])
-		WRITE_ONCE(wg->jmax, nla_get_u16(info->attrs[WGDEVICE_A_JMAX]));
+		wg->jmax = nla_get_u16(info->attrs[WGDEVICE_A_JMAX]);
 
 	if (info->attrs[WGDEVICE_A_S1]) {
 		val16 = nla_get_u16(info->attrs[WGDEVICE_A_S1]);
@@ -808,7 +808,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 			ret = -EINVAL;
 			goto out;
 		}
-		WRITE_ONCE(wg->init_padding, val16);
+		wg->init_padding = val16;
 	}
 
 	if (info->attrs[WGDEVICE_A_S2]) {
@@ -820,7 +820,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 			ret = -EINVAL;
 			goto out;
 		}
-		WRITE_ONCE(wg->resp_padding, val16);
+		wg->resp_padding = val16;
 	}
 
 	if (info->attrs[WGDEVICE_A_S3]) {
@@ -832,7 +832,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 			ret = -EINVAL;
 			goto out;
 		}
-		WRITE_ONCE(wg->cookie_padding, val16);
+		wg->cookie_padding = val16;
 	}
 
 	if (info->attrs[WGDEVICE_A_S4]) {
@@ -844,17 +844,17 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 			ret = -EINVAL;
 			goto out;
 		}
-		WRITE_ONCE(wg->transport_padding, val16);
+		wg->transport_padding = val16;
 	}
 
 	init_header = info->attrs[WGDEVICE_A_H1] ?
-		nla_get_u64(info->attrs[WGDEVICE_A_H1]) : READ_ONCE(wg->init_header);
+		nla_get_u64(info->attrs[WGDEVICE_A_H1]) : wg->init_header;
 	resp_header = info->attrs[WGDEVICE_A_H2] ?
-		nla_get_u64(info->attrs[WGDEVICE_A_H2]) : READ_ONCE(wg->resp_header);
+		nla_get_u64(info->attrs[WGDEVICE_A_H2]) : wg->resp_header;
 	cookie_header = info->attrs[WGDEVICE_A_H3] ?
-		nla_get_u64(info->attrs[WGDEVICE_A_H3]) : READ_ONCE(wg->cookie_header);
+		nla_get_u64(info->attrs[WGDEVICE_A_H3]) : wg->cookie_header;
 	transport_header = info->attrs[WGDEVICE_A_H4] ?
-		nla_get_u64(info->attrs[WGDEVICE_A_H4]) : READ_ONCE(wg->transport_header);
+		nla_get_u64(info->attrs[WGDEVICE_A_H4]) : wg->transport_header;
 
 	if (info->attrs[WGDEVICE_A_H1]) {
 		if (u32_range_overlap(init_header, resp_header) ||
@@ -865,7 +865,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 			ret = -EINVAL;
 			goto out;
 		}
-		WRITE_ONCE(wg->init_header, init_header);
+		wg->init_header = init_header;
 	}
 
 	if (info->attrs[WGDEVICE_A_H2]) {
@@ -877,7 +877,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 			ret = -EINVAL;
 			goto out;
 		}
-		WRITE_ONCE(wg->resp_header, resp_header);
+		wg->resp_header = resp_header;
 	}
 
 	if (info->attrs[WGDEVICE_A_H3]) {
@@ -889,7 +889,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 			ret = -EINVAL;
 			goto out;
 		}
-		WRITE_ONCE(wg->cookie_header, cookie_header);
+		wg->cookie_header = cookie_header;
 	}
 
 	if (info->attrs[WGDEVICE_A_H4]) {
@@ -901,7 +901,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 			ret = -EINVAL;
 			goto out;
 		}
-		WRITE_ONCE(wg->transport_header, transport_header);
+		wg->transport_header = transport_header;
 	}
 
 	if (info->attrs[WGDEVICE_A_I1]) {
@@ -951,22 +951,22 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 			nla_data(info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY]));
 
 	if (info->attrs[WGDEVICE_A_CONTENT_PADDING_ADDITION])
-		WRITE_ONCE(wg->content_padding_addition, nla_get_u32(info->attrs[WGDEVICE_A_CONTENT_PADDING_ADDITION]));
+		wg->content_padding_addition = nla_get_u32(info->attrs[WGDEVICE_A_CONTENT_PADDING_ADDITION]);
 
 	if (info->attrs[WGDEVICE_A_REKEY_AFTER_TIME])
-		WRITE_ONCE(wg->rekey_after_time, nla_get_u32(info->attrs[WGDEVICE_A_REKEY_AFTER_TIME]));
+		wg->rekey_after_time = nla_get_u32(info->attrs[WGDEVICE_A_REKEY_AFTER_TIME]);
 
 	if (info->attrs[WGDEVICE_A_REKEY_TIMEOUT])
-		WRITE_ONCE(wg->rekey_timeout, nla_get_u32(info->attrs[WGDEVICE_A_REKEY_TIMEOUT]));
+		wg->rekey_timeout = nla_get_u32(info->attrs[WGDEVICE_A_REKEY_TIMEOUT]);
 
 	if (info->attrs[WGDEVICE_A_REJECT_AFTER_TIME])
-		WRITE_ONCE(wg->reject_after_time, nla_get_u32(info->attrs[WGDEVICE_A_REJECT_AFTER_TIME]));
+		wg->reject_after_time = nla_get_u32(info->attrs[WGDEVICE_A_REJECT_AFTER_TIME]);
 
 	if (info->attrs[WGDEVICE_A_KEEPALIVE_TIMEOUT])
-		WRITE_ONCE(wg->keepalive_timeout, nla_get_u32(info->attrs[WGDEVICE_A_KEEPALIVE_TIMEOUT]));
+		wg->keepalive_timeout = nla_get_u32(info->attrs[WGDEVICE_A_KEEPALIVE_TIMEOUT]);
 
 	if (info->attrs[WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS])
-		WRITE_ONCE(wg->max_handshake_attempts, nla_get_u32(info->attrs[WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS]));
+		wg->max_handshake_attempts = nla_get_u32(info->attrs[WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS]);
 
 	if (flags & WGDEVICE_F_REPLACE_PEERS)
 		wg_peer_remove_all(wg);
