@@ -34,9 +34,11 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 	u16 junk_packet_count, junk_packet_size;
 	int i;
 	struct jp_spec* spec;
+	u16 min_timeout = u16_range_is_zero(peer->device->rekey_timeout) ?
+		u16_range_lo(peer->device->rekey_timeout) : REKEY_TIMEOUT;
 
 	if (!wg_birthdate_has_expired(atomic64_read(&peer->last_sent_handshake),
-				      REKEY_TIMEOUT))
+				      min_timeout))
 		return; /* This function is rate limited. */
 
 	atomic64_set(&peer->last_sent_handshake, ktime_get_coarse_boottime_ns());
@@ -101,8 +103,13 @@ void wg_packet_handshake_send_worker(struct work_struct *work)
 void wg_packet_send_queued_handshake_initiation(struct wg_peer *peer,
 						bool is_retry)
 {
-	if (!is_retry)
+	u16 min_timeout = u16_range_is_zero(peer->device->rekey_timeout) ?
+		u16_range_lo(peer->device->rekey_timeout) : REKEY_TIMEOUT;
+
+	if (!is_retry) {
 		peer->timer_handshake_attempts = 0;
+		peer->max_handshake_attempts = !u16_range_is_zero(peer->device->max_handshake_attempts) ? u16_range_pick_one(peer->device->max_handshake_attempts) : MAX_TIMER_HANDSHAKES;
+	}
 
 	rcu_read_lock_bh();
 	/* We check last_sent_handshake here in addition to the actual function
@@ -110,7 +117,7 @@ void wg_packet_send_queued_handshake_initiation(struct wg_peer *peer,
 	 * necessary:
 	 */
 	if (!wg_birthdate_has_expired(atomic64_read(&peer->last_sent_handshake),
-				      REKEY_TIMEOUT) ||
+				      min_timeout) ||
 			unlikely(READ_ONCE(peer->is_dead)))
 		goto out;
 
@@ -172,6 +179,11 @@ void wg_packet_send_handshake_cookie(struct wg_device *wg,
 						  wg->cookie_padding);
 }
 
+static int key_fresh_timeout(struct wg_peer *peer)
+{
+	return !u16_range_is_zero(peer->device->rekey_after_time) ? u16_range_pick_one(peer->device->rekey_after_time) : REKEY_AFTER_TIME;
+}
+
 static void keep_key_fresh(struct wg_peer *peer)
 {
 	struct noise_keypair *keypair;
@@ -182,11 +194,31 @@ static void keep_key_fresh(struct wg_peer *peer)
 	send = keypair && READ_ONCE(keypair->sending.is_valid) &&
 	       (atomic64_read(&keypair->sending_counter) > REKEY_AFTER_MESSAGES ||
 		(keypair->i_am_the_initiator &&
-		 wg_birthdate_has_expired(keypair->sending.birthdate, REKEY_AFTER_TIME)));
+		 wg_birthdate_has_expired(keypair->sending.birthdate, key_fresh_timeout(peer))));
 	rcu_read_unlock_bh();
 
 	if (unlikely(send))
 		wg_packet_send_queued_handshake_initiation(peer, false);
+}
+
+static unsigned int randomize_skb_padding(struct sk_buff *skb, u16_range_t addition_range)
+{
+	unsigned int packet_size = skb->len, space;
+	u16 addition;
+
+	if (u16_range_is_zero(addition_range))
+		return 0;
+
+	addition = u16_range_pick_one(addition_range);
+	if (likely(PACKET_CB(skb)->mtu)) {
+		if (unlikely(packet_size > PACKET_CB(skb)->mtu))
+			packet_size %= PACKET_CB(skb)->mtu;
+
+		space = PACKET_CB(skb)->mtu - packet_size;
+		if (addition > space)
+			addition = space;
+	}
+	return addition;
 }
 
 static unsigned int calculate_skb_padding(struct sk_buff *skb)
@@ -228,7 +260,9 @@ static bool encrypt_packet(struct wg_device *wg, struct sk_buff *skb, struct noi
 	skb_get_hash(skb);
 
 	/* Calculate lengths. */
-	padding_len = calculate_skb_padding(skb);
+	padding_len = !u16_range_is_zero(wg->content_padding_addition) ?
+		randomize_skb_padding(skb, wg->content_padding_addition) :
+		calculate_skb_padding(skb);
 	trailer_len = padding_len + noise_encrypted_len(0);
 	plaintext_len = skb->len + padding_len;
 

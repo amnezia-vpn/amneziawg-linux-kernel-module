@@ -183,7 +183,7 @@ void wg_noise_expire_current_peer_keypairs(struct wg_peer *peer)
 	struct noise_keypair *keypair;
 
 	wg_noise_handshake_clear(&peer->handshake);
-	wg_noise_reset_last_sent_handshake(&peer->last_sent_handshake);
+	wg_peer_reset_last_sent_handshake(peer);
 
 	spin_lock_bh(&peer->keypairs.keypair_update_lock);
 	keypair = rcu_dereference_protected(peer->keypairs.next_keypair,

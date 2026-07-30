@@ -133,7 +133,7 @@ static int wg_stop(struct net_device *dev)
 		wg_timers_stop(peer);
 		wg_noise_handshake_clear(&peer->handshake);
 		wg_noise_keypairs_clear(&peer->keypairs);
-		wg_noise_reset_last_sent_handshake(&peer->last_sent_handshake);
+		wg_peer_reset_last_sent_handshake(peer);
 	}
 	mutex_unlock(&wg->device_update_lock);
 	while ((skb = ptr_ring_consume(&wg->handshake_queue.ring)) != NULL)

@@ -290,6 +290,14 @@ void wg_packet_handshake_receive_worker(struct work_struct *work)
 	}
 }
 
+static int key_fresh_timeout(struct wg_peer *peer)
+{
+	return
+		(!u16_range_is_zero(peer->device->reject_after_time) ? u16_range_pick_one(peer->device->reject_after_time) : REJECT_AFTER_TIME) -
+		(!u16_range_is_zero(peer->device->keepalive_timeout) ? u16_range_lo(peer->device->keepalive_timeout) : KEEPALIVE_TIMEOUT) -
+		(!u16_range_is_zero(peer->device->rekey_timeout) ? u16_range_lo(peer->device->rekey_timeout) : REKEY_TIMEOUT);
+}
+
 static void keep_key_fresh(struct wg_peer *peer)
 {
 	struct noise_keypair *keypair;
@@ -302,8 +310,7 @@ static void keep_key_fresh(struct wg_peer *peer)
 	keypair = rcu_dereference_bh(peer->keypairs.current_keypair);
 	send = keypair && READ_ONCE(keypair->sending.is_valid) &&
 	       keypair->i_am_the_initiator &&
-	       wg_birthdate_has_expired(keypair->sending.birthdate,
-			REJECT_AFTER_TIME - KEEPALIVE_TIMEOUT - REKEY_TIMEOUT);
+	       wg_birthdate_has_expired(keypair->sending.birthdate, key_fresh_timeout(peer));
 	rcu_read_unlock_bh();
 
 	if (unlikely(send)) {
