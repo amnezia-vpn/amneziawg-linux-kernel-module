@@ -5,11 +5,12 @@
 
 #include "netlink.h"
 #include "device.h"
-#include "magic_header.h"
+#include "header_protection.h"
 #include "peer.h"
 #include "socket.h"
 #include "queueing.h"
 #include "messages.h"
+#include "type.h"
 #include "uapi/wireguard.h"
 #include <linux/if.h>
 #include <net/genetlink.h>
@@ -47,10 +48,10 @@ static const struct nla_policy device_policy[WGDEVICE_A_MAX + 1] = {
 	[WGDEVICE_A_JMAX]		= { .type = NLA_U16 },
 	[WGDEVICE_A_S1]		= { .type = NLA_U16 },
 	[WGDEVICE_A_S2]		= { .type = NLA_U16 },
-	[WGDEVICE_A_H1]		= { .type = NLA_NUL_STRING },
-	[WGDEVICE_A_H2]		= { .type = NLA_NUL_STRING },
-	[WGDEVICE_A_H3]		= { .type = NLA_NUL_STRING },
-	[WGDEVICE_A_H4]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_H1]		= { .type = NLA_U64 },
+	[WGDEVICE_A_H2]		= { .type = NLA_U64 },
+	[WGDEVICE_A_H3]		= { .type = NLA_U64 },
+	[WGDEVICE_A_H4]		= { .type = NLA_U64 },
 	[WGDEVICE_A_PEER]	= { .type = NLA_NESTED },
 	[WGDEVICE_A_S3]		= { .type = NLA_U16 },
 	[WGDEVICE_A_S4]		= { .type = NLA_U16 },
@@ -58,7 +59,14 @@ static const struct nla_policy device_policy[WGDEVICE_A_MAX + 1] = {
 	[WGDEVICE_A_I2]		= { .type = NLA_NUL_STRING },
 	[WGDEVICE_A_I3]		= { .type = NLA_NUL_STRING },
 	[WGDEVICE_A_I4]		= { .type = NLA_NUL_STRING },
-	[WGDEVICE_A_I5]		= { .type = NLA_NUL_STRING }
+	[WGDEVICE_A_I5]		= { .type = NLA_NUL_STRING },
+	[WGDEVICE_A_HEADER_PROTECTION_KEY] = NLA_POLICY_EXACT_LEN(HEADER_PROTECTION_KEY_SIZE),
+	[WGDEVICE_A_CONTENT_PADDING_ADDITION] = { .type = NLA_U32 },
+	[WGDEVICE_A_REKEY_AFTER_TIME] = { .type = NLA_U32 },
+	[WGDEVICE_A_REKEY_TIMEOUT] = { .type = NLA_U32 },
+	[WGDEVICE_A_REJECT_AFTER_TIME] = { .type = NLA_U32 },
+	[WGDEVICE_A_KEEPALIVE_TIMEOUT] = { .type = NLA_U32 },
+	[WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS] = { .type = NLA_U32 },
 };
 
 static const struct nla_policy peer_policy[WGPEER_A_MAX + 1] = {
@@ -66,7 +74,7 @@ static const struct nla_policy peer_policy[WGPEER_A_MAX + 1] = {
 	[WGPEER_A_PRESHARED_KEY]			= NLA_POLICY_EXACT_LEN(NOISE_SYMMETRIC_KEY_LEN),
 	[WGPEER_A_FLAGS]				= NLA_POLICY_MASK(NLA_U32, __WGPEER_F_ALL),
 	[WGPEER_A_ENDPOINT]				= NLA_POLICY_MIN_LEN(sizeof(struct sockaddr)),
-	[WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL]	= { .type = NLA_U16 },
+	[WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL]	= { .type = NLA_U64 },
 	[WGPEER_A_LAST_HANDSHAKE_TIME]			= NLA_POLICY_EXACT_LEN(sizeof(struct __kernel_timespec)),
 	[WGPEER_A_RX_BYTES]				= { .type = NLA_U64 },
 	[WGPEER_A_TX_BYTES]				= { .type = NLA_U64 },
@@ -293,12 +301,6 @@ get_peer(struct wg_peer *peer, struct sk_buff *skb, struct dump_ctx *ctx)
 	if (fail)
 		goto err;
 
-	if (peer->advanced_security) {
-		fail = nla_put_flag(skb, WGPEER_A_ADVANCED_SECURITY);
-		if (fail)
-			goto err;
-	}
-
 	down_read(&peer->handshake.lock);
 	fail = nla_put(skb, WGPEER_A_PUBLIC_KEY, NOISE_PUBLIC_KEY_LEN,
 		       peer->handshake.remote_static);
@@ -322,7 +324,7 @@ get_peer(struct wg_peer *peer, struct sk_buff *skb, struct dump_ctx *ctx)
 
 		if (nla_put(skb, WGPEER_A_LAST_HANDSHAKE_TIME,
 			    sizeof(last_handshake), &last_handshake) ||
-		    nla_put_u16(skb, WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL,
+		    nla_put_u32(skb, WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL,
 				peer->persistent_keepalive_interval) ||
 		    nla_put_u64_64bit(skb, WGPEER_A_TX_BYTES, peer->tx_bytes,
 				      WGPEER_A_UNSPEC) ||
@@ -439,19 +441,23 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 		    nla_put_u16(skb, WGDEVICE_A_JC, wg->jc) ||
 		    nla_put_u16(skb, WGDEVICE_A_JMIN, wg->jmin) ||
 		    nla_put_u16(skb, WGDEVICE_A_JMAX, wg->jmax) ||
-		    nla_put_u16(skb, WGDEVICE_A_S1, wg->junk_size[MSGIDX_HANDSHAKE_INIT]) ||
-		    nla_put_u16(skb, WGDEVICE_A_S2,wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]) ||
-		    (mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_INIT], buf, sizeof(buf)) &&
-				nla_put_string(skb, WGDEVICE_A_H1, buf)) ||
-			(mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE], buf, sizeof(buf)) &&
-				nla_put_string(skb, WGDEVICE_A_H2, buf)) ||
-			(mh_genspec(&wg->headers[MSGIDX_HANDSHAKE_COOKIE], buf, sizeof(buf)) &&
-				nla_put_string(skb, WGDEVICE_A_H3, buf)) ||
-			(mh_genspec(&wg->headers[MSGIDX_TRANSPORT], buf, sizeof(buf)) &&
-				nla_put_string(skb, WGDEVICE_A_H4, buf)) ||
-			nla_put_u16(skb, WGDEVICE_A_S3, wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]) ||
-			nla_put_u16(skb, WGDEVICE_A_S4, wg->junk_size[MSGIDX_TRANSPORT]) ||
-			(wg->ispecs[0].desc &&
+		    nla_put_u16(skb, WGDEVICE_A_S1, wg->init_padding) ||
+		    nla_put_u16(skb, WGDEVICE_A_S2,wg->resp_padding) ||
+			nla_put_u16(skb, WGDEVICE_A_S3, wg->cookie_padding) ||
+			nla_put_u16(skb, WGDEVICE_A_S4, wg->transport_padding) ||
+		    nla_put_uint(skb, WGDEVICE_A_H1, wg->init_header) ||
+			nla_put_uint(skb, WGDEVICE_A_H2, wg->resp_header) ||
+			nla_put_uint(skb, WGDEVICE_A_H3, wg->cookie_header) ||
+			nla_put_uint(skb, WGDEVICE_A_H4, wg->transport_header) ||
+			nla_put_u32(skb, WGDEVICE_A_CONTENT_PADDING_ADDITION, wg->content_padding_addition) ||
+			nla_put_u32(skb, WGDEVICE_A_REKEY_AFTER_TIME, wg->rekey_after_time) ||
+			nla_put_u32(skb, WGDEVICE_A_REKEY_TIMEOUT, wg->rekey_timeout) ||
+			nla_put_u32(skb, WGDEVICE_A_REJECT_AFTER_TIME, wg->reject_after_time) ||
+			nla_put_u32(skb, WGDEVICE_A_KEEPALIVE_TIMEOUT, wg->keepalive_timeout) ||
+			nla_put_u32(skb, WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS, wg->max_handshake_attempts))
+			goto out;
+
+		if ((wg->ispecs[0].desc &&
 				nla_put_string(skb, WGDEVICE_A_I1, wg->ispecs[0].desc)) ||
 			(wg->ispecs[1].desc &&
 				nla_put_string(skb, WGDEVICE_A_I2, wg->ispecs[1].desc)) ||
@@ -462,6 +468,16 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 			(wg->ispecs[4].desc &&
 				nla_put_string(skb, WGDEVICE_A_I5, wg->ispecs[4].desc)))
 			goto out;
+
+		down_read(&wg->header_protection.lock);
+		if (wg->header_protection.has_protection) {
+			awg_header_protection_get_key(&wg->header_protection, buf);
+			if (nla_put(skb, WGDEVICE_A_HEADER_PROTECTION_KEY, HEADER_PROTECTION_KEY_SIZE, buf)) {
+				up_read(&wg->header_protection.lock);
+				goto out;
+			}
+		}
+		up_read(&wg->header_protection.lock);
 
 		down_read(&wg->static_identity.lock);
 		if (wg->static_identity.has_identity) {
@@ -703,21 +719,16 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 	}
 
 	if (attrs[WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL]) {
-		const u16 persistent_keepalive_interval = nla_get_u16(
+		const u16_range_t persistent_keepalive_interval = nla_get_u32(
 				attrs[WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL]);
 		const bool send_keepalive =
-			!peer->persistent_keepalive_interval &&
-			persistent_keepalive_interval &&
+			u16_range_is_zero(peer->persistent_keepalive_interval) &&
+			!u16_range_is_zero(persistent_keepalive_interval) &&
 			netif_running(wg->dev);
 
 		peer->persistent_keepalive_interval = persistent_keepalive_interval;
 		if (send_keepalive)
 			wg_packet_send_keepalive(peer);
-	}
-
-	if (flags & WGPEER_F_HAS_ADVANCED_SECURITY) {
-		peer->advanced_security = wg->advanced_security &&
-				nla_get_flag(attrs[WGPEER_A_ADVANCED_SECURITY]);
 	}
 
 	if (netif_running(wg->dev))
@@ -734,9 +745,12 @@ out:
 static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 {
 	struct wg_device *wg = lookup_interface(info->attrs, skb);
+	u32_range_t init_header, resp_header, cookie_header, transport_header;
 	u32 flags = 0;
 	int ret;
-	char *str;
+	u16 val16;
+	bool has_protection = awg_has_header_protection(wg) ||
+		info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY];
 
 	if (IS_ERR(wg)) {
 		ret = PTR_ERR(wg);
@@ -776,106 +790,183 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 	}
 
-	if (info->attrs[WGDEVICE_A_JC]) {
-		wg->advanced_security = true;
+	if (info->attrs[WGDEVICE_A_JC])
 		wg->jc = nla_get_u16(info->attrs[WGDEVICE_A_JC]);
-	}
 
-	if (info->attrs[WGDEVICE_A_JMIN]) {
-		wg->advanced_security = true;
+	if (info->attrs[WGDEVICE_A_JMIN])
 		wg->jmin = nla_get_u16(info->attrs[WGDEVICE_A_JMIN]);
-	}
 
-	if (info->attrs[WGDEVICE_A_JMAX]) {
-		wg->advanced_security = true;
+	if (info->attrs[WGDEVICE_A_JMAX])
 		wg->jmax = nla_get_u16(info->attrs[WGDEVICE_A_JMAX]);
-	}
 
 	if (info->attrs[WGDEVICE_A_S1]) {
-		wg->advanced_security = true;
-		wg->junk_size[MSGIDX_HANDSHAKE_INIT] = nla_get_u16(info->attrs[WGDEVICE_A_S1]);
+		val16 = nla_get_u16(info->attrs[WGDEVICE_A_S1]);
+		if (has_protection && val16 < HEADER_PROTECTION_NONCE_SIZE) {
+			net_dbg_ratelimited(
+				"%s: S1 must be more then %d to use headerProtection\n",
+				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			ret = -EINVAL;
+			goto out;
+		}
+		wg->init_padding = val16;
 	}
 
 	if (info->attrs[WGDEVICE_A_S2]) {
-		wg->advanced_security = true;
-		wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE] = nla_get_u16(info->attrs[WGDEVICE_A_S2]);
-	}
-
-	if (info->attrs[WGDEVICE_A_H1]) {
-		wg->advanced_security = true;
-		str = nla_strdup(info->attrs[WGDEVICE_A_H1], GFP_KERNEL);
-		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_INIT], str);
-		kfree(str);
-		if (ret)
+		val16 = nla_get_u16(info->attrs[WGDEVICE_A_S2]);
+		if (has_protection && val16 < HEADER_PROTECTION_NONCE_SIZE) {
+			net_dbg_ratelimited(
+				"%s: S2 must be more then %d to use headerProtection\n",
+				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			ret = -EINVAL;
 			goto out;
-	}
-
-	if (info->attrs[WGDEVICE_A_H2]) {
-		wg->advanced_security = true;
-		str = nla_strdup(info->attrs[WGDEVICE_A_H2], GFP_KERNEL);
-		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE], str);
-		kfree(str);
-		if (ret)
-			goto out;
-	}
-
-	if (info->attrs[WGDEVICE_A_H3]) {
-		wg->advanced_security = true;
-		str = nla_strdup(info->attrs[WGDEVICE_A_H3], GFP_KERNEL);
-		ret = mh_parse(&wg->headers[MSGIDX_HANDSHAKE_COOKIE], str);
-		kfree(str);
-		if (ret)
-			goto out;
-	}
-
-	if (info->attrs[WGDEVICE_A_H4]) {
-		wg->advanced_security = true;
-		str = nla_strdup(info->attrs[WGDEVICE_A_H4], GFP_KERNEL);
-		ret = mh_parse(&wg->headers[MSGIDX_TRANSPORT], str);
-		kfree(str);
-		if (ret)
-			goto out;
+		}
+		wg->resp_padding = val16;
 	}
 
 	if (info->attrs[WGDEVICE_A_S3]) {
-		wg->advanced_security = true;
-		wg->junk_size[MSGIDX_HANDSHAKE_COOKIE] = nla_get_u16(info->attrs[WGDEVICE_A_S3]);
+		val16 = nla_get_u16(info->attrs[WGDEVICE_A_S3]);
+		if (has_protection && val16 < HEADER_PROTECTION_NONCE_SIZE) {
+			net_dbg_ratelimited(
+				"%s: S3 must be more then %d to use headerProtection\n",
+				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			ret = -EINVAL;
+			goto out;
+		}
+		wg->cookie_padding = val16;
 	}
 
 	if (info->attrs[WGDEVICE_A_S4]) {
-		wg->advanced_security = true;
-		wg->junk_size[MSGIDX_TRANSPORT] = nla_get_u16(info->attrs[WGDEVICE_A_S4]);
+		val16 = nla_get_u16(info->attrs[WGDEVICE_A_S4]);
+		if (has_protection && val16 < HEADER_PROTECTION_NONCE_SIZE) {
+			net_dbg_ratelimited(
+				"%s: S4 must be more then %d to use headerProtection\n",
+				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			ret = -EINVAL;
+			goto out;
+		}
+		wg->transport_padding = val16;
+	}
+
+	init_header = info->attrs[WGDEVICE_A_H1] ?
+		nla_get_u64(info->attrs[WGDEVICE_A_H1]) : wg->init_header;
+	resp_header = info->attrs[WGDEVICE_A_H2] ?
+		nla_get_u64(info->attrs[WGDEVICE_A_H2]) : wg->resp_header;
+	cookie_header = info->attrs[WGDEVICE_A_H3] ?
+		nla_get_u64(info->attrs[WGDEVICE_A_H3]) : wg->cookie_header;
+	transport_header = info->attrs[WGDEVICE_A_H4] ?
+		nla_get_u64(info->attrs[WGDEVICE_A_H4]) : wg->transport_header;
+
+	if (info->attrs[WGDEVICE_A_H1]) {
+		if (u32_range_overlap(init_header, resp_header) ||
+			u32_range_overlap(init_header, cookie_header) ||
+				u32_range_overlap(init_header, transport_header)) {
+			net_dbg_ratelimited("%s: H1 must not overlap with others\n",
+				wg->dev->name);
+			ret = -EINVAL;
+			goto out;
+		}
+		wg->init_header = init_header;
+	}
+
+	if (info->attrs[WGDEVICE_A_H2]) {
+		if (u32_range_overlap(resp_header, init_header) ||
+			u32_range_overlap(resp_header, cookie_header) ||
+				u32_range_overlap(resp_header, transport_header)) {
+			net_dbg_ratelimited("%s: H2 must not overlap with others\n",
+				wg->dev->name);
+			ret = -EINVAL;
+			goto out;
+		}
+		wg->resp_header = resp_header;
+	}
+
+	if (info->attrs[WGDEVICE_A_H3]) {
+		if (u32_range_overlap(cookie_header, init_header) ||
+			u32_range_overlap(cookie_header, resp_header) ||
+				u32_range_overlap(cookie_header, transport_header)) {
+			net_dbg_ratelimited("%s: H3 must not overlap with others\n",
+				wg->dev->name);
+			ret = -EINVAL;
+			goto out;
+		}
+		wg->cookie_header = cookie_header;
+	}
+
+	if (info->attrs[WGDEVICE_A_H4]) {
+		if (u32_range_overlap(transport_header, init_header) ||
+			u32_range_overlap(transport_header, resp_header) ||
+				u32_range_overlap(transport_header, cookie_header)) {
+			net_dbg_ratelimited("%s: H4 must not overlap with others\n",
+				wg->dev->name);
+			ret = -EINVAL;
+			goto out;
+		}
+		wg->transport_header = transport_header;
 	}
 
 	if (info->attrs[WGDEVICE_A_I1]) {
-		wg->advanced_security = true;
-		kfree(wg->ispecs[0].desc);
-		wg->ispecs[0].desc = nla_strdup(info->attrs[WGDEVICE_A_I1], GFP_KERNEL);
+		ret = jp_spec_setup(&wg->ispecs[0], nla_data(info->attrs[WGDEVICE_A_I1]));
+		if (ret) {
+			net_dbg_ratelimited("%s: I1-packet invalid format\n", wg->dev->name);
+			goto out;
+		}
 	}
 
 	if (info->attrs[WGDEVICE_A_I2]) {
-		wg->advanced_security = true;
-		kfree(wg->ispecs[1].desc);
-		wg->ispecs[1].desc = nla_strdup(info->attrs[WGDEVICE_A_I2], GFP_KERNEL);
+		ret = jp_spec_setup(&wg->ispecs[1], nla_data(info->attrs[WGDEVICE_A_I2]));
+		if (ret) {
+			net_dbg_ratelimited("%s: I2-packet invalid format\n", wg->dev->name);
+			goto out;
+		}
 	}
 
 	if (info->attrs[WGDEVICE_A_I3]) {
-		wg->advanced_security = true;
-		kfree(wg->ispecs[2].desc);
-		wg->ispecs[2].desc = nla_strdup(info->attrs[WGDEVICE_A_I3], GFP_KERNEL);
+		ret = jp_spec_setup(&wg->ispecs[2], nla_data(info->attrs[WGDEVICE_A_I3]));
+		if (ret) {
+			net_dbg_ratelimited("%s: I3-packet invalid format\n", wg->dev->name);
+			goto out;
+		}
 	}
 
 	if (info->attrs[WGDEVICE_A_I4]) {
-		wg->advanced_security = true;
-		kfree(wg->ispecs[3].desc);
-		wg->ispecs[3].desc = nla_strdup(info->attrs[WGDEVICE_A_I4], GFP_KERNEL);
+		ret = jp_spec_setup(&wg->ispecs[0], nla_data(info->attrs[WGDEVICE_A_I4]));
+		if (ret) {
+			net_dbg_ratelimited("%s: I4-packet invalid format\n", wg->dev->name);
+			goto out;
+		}
 	}
 
 	if (info->attrs[WGDEVICE_A_I5]) {
-		wg->advanced_security = true;
-		kfree(wg->ispecs[4].desc);
-		wg->ispecs[4].desc = nla_strdup(info->attrs[WGDEVICE_A_I5], GFP_KERNEL);
+		ret = jp_spec_setup(&wg->ispecs[0], nla_data(info->attrs[WGDEVICE_A_I5]));
+		if (ret) {
+			net_dbg_ratelimited("%s: I5-packet invalid format\n", wg->dev->name);
+			goto out;
+		}
 	}
+
+	if (info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY] &&
+		nla_len(info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY])
+			== HEADER_PROTECTION_KEY_SIZE)
+		awg_header_protection_set_key(&wg->header_protection,
+			nla_data(info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY]));
+
+	if (info->attrs[WGDEVICE_A_CONTENT_PADDING_ADDITION])
+		wg->content_padding_addition = nla_get_u32(info->attrs[WGDEVICE_A_CONTENT_PADDING_ADDITION]);
+
+	if (info->attrs[WGDEVICE_A_REKEY_AFTER_TIME])
+		wg->rekey_after_time = nla_get_u32(info->attrs[WGDEVICE_A_REKEY_AFTER_TIME]);
+
+	if (info->attrs[WGDEVICE_A_REKEY_TIMEOUT])
+		wg->rekey_timeout = nla_get_u32(info->attrs[WGDEVICE_A_REKEY_TIMEOUT]);
+
+	if (info->attrs[WGDEVICE_A_REJECT_AFTER_TIME])
+		wg->reject_after_time = nla_get_u32(info->attrs[WGDEVICE_A_REJECT_AFTER_TIME]);
+
+	if (info->attrs[WGDEVICE_A_KEEPALIVE_TIMEOUT])
+		wg->keepalive_timeout = nla_get_u32(info->attrs[WGDEVICE_A_KEEPALIVE_TIMEOUT]);
+
+	if (info->attrs[WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS])
+		wg->max_handshake_attempts = nla_get_u32(info->attrs[WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS]);
 
 	if (flags & WGDEVICE_F_REPLACE_PEERS)
 		wg_peer_remove_all(wg);
@@ -915,11 +1006,6 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 		up_write(&wg->static_identity.lock);
 	}
 skip_set_private_key:
-
-	ret = wg_device_handle_post_config(wg);
-	if (ret < 0)
-		goto out;
-
 	if (info->attrs[WGDEVICE_A_PEERS]) {
 		struct nlattr *attr, *peer[WGPEER_A_MAX + 1];
 		int rem;
@@ -1016,7 +1102,7 @@ void __exit wg_genetlink_uninit(void)
 }
 
 int wg_genl_mcast_peer_unknown(struct wg_device *wg, const u8 pubkey[NOISE_PUBLIC_KEY_LEN],
-	                           struct endpoint *endpoint, bool advanced_security)
+	                           struct endpoint *endpoint)
 {
 	struct sk_buff *skb;
 	struct nlattr *peer_nest;
@@ -1057,11 +1143,9 @@ int wg_genl_mcast_peer_unknown(struct wg_device *wg, const u8 pubkey[NOISE_PUBLI
 	if (ret)
 		goto err;
 
-	if (advanced_security) {
-		ret = nla_put_flag(skb, WGPEER_A_ADVANCED_SECURITY);
-		if (ret)
-			goto err;
-	}
+	ret = nla_put_flag(skb, WGPEER_A_ADVANCED_SECURITY);
+	if (ret)
+		goto err;
 
 	nla_nest_end(skb, peer_nest);
 

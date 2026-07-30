@@ -3,8 +3,8 @@
  * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
 
+#include "header_protection.h"
 #include "junk.h"
-#include "magic_header.h"
 #include "queueing.h"
 #include "timers.h"
 #include "device.h"
@@ -12,6 +12,7 @@
 #include "socket.h"
 #include "messages.h"
 #include "cookie.h"
+#include "type.h"
 
 #ifdef COMPAT_CRYPTO_IS_ZINC
 #include <linux/simd.h>
@@ -33,9 +34,11 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 	u16 junk_packet_count, junk_packet_size;
 	int i;
 	struct jp_spec* spec;
+	u16 min_timeout = u16_range_is_zero(peer->device->rekey_timeout) ?
+		u16_range_lo(peer->device->rekey_timeout) : REKEY_TIMEOUT;
 
 	if (!wg_birthdate_has_expired(atomic64_read(&peer->last_sent_handshake),
-				      REKEY_TIMEOUT))
+				      min_timeout))
 		return; /* This function is rate limited. */
 
 	atomic64_set(&peer->last_sent_handshake, ktime_get_coarse_boottime_ns());
@@ -75,14 +78,15 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 		kfree(buffer);
 	}
 
-	if (wg_noise_handshake_create_initiation(&packet, &peer->handshake, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_INIT]))) {
+	if (wg_noise_handshake_create_initiation(&packet, &peer->handshake,
+			u32_range_pick_one(wg->init_header))) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);
 		wg_timers_any_authenticated_packet_traversal(peer);
 		wg_timers_any_authenticated_packet_sent(peer);
 		atomic64_set(&peer->last_sent_handshake,
 			     ktime_get_coarse_boottime_ns());
 		wg_socket_send_buffer_to_peer(peer, &packet, sizeof(packet),
-					      HANDSHAKE_DSCP, wg->junk_size[MSGIDX_HANDSHAKE_INIT]);
+					      HANDSHAKE_DSCP, wg->init_padding);
 		wg_timers_handshake_initiated(peer);
 	}
 }
@@ -99,8 +103,13 @@ void wg_packet_handshake_send_worker(struct work_struct *work)
 void wg_packet_send_queued_handshake_initiation(struct wg_peer *peer,
 						bool is_retry)
 {
-	if (!is_retry)
+	u16 min_timeout = u16_range_is_zero(peer->device->rekey_timeout) ?
+		u16_range_lo(peer->device->rekey_timeout) : REKEY_TIMEOUT;
+
+	if (!is_retry) {
 		peer->timer_handshake_attempts = 0;
+		peer->max_handshake_attempts = !u16_range_is_zero(peer->device->max_handshake_attempts) ? u16_range_pick_one(peer->device->max_handshake_attempts) : MAX_TIMER_HANDSHAKES;
+	}
 
 	rcu_read_lock_bh();
 	/* We check last_sent_handshake here in addition to the actual function
@@ -108,7 +117,7 @@ void wg_packet_send_queued_handshake_initiation(struct wg_peer *peer,
 	 * necessary:
 	 */
 	if (!wg_birthdate_has_expired(atomic64_read(&peer->last_sent_handshake),
-				      REKEY_TIMEOUT) ||
+				      min_timeout) ||
 			unlikely(READ_ONCE(peer->is_dead)))
 		goto out;
 
@@ -136,7 +145,8 @@ void wg_packet_send_handshake_response(struct wg_peer *peer)
 			    peer->device->dev->name, peer->internal_id,
 			    &peer->endpoint.addr);
 
-	if (wg_noise_handshake_create_response(&packet, &peer->handshake, mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_RESPONSE]))) {
+	if (wg_noise_handshake_create_response(&packet, &peer->handshake,
+			u32_range_pick_one(wg->resp_header))) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);
 		if (wg_noise_handshake_begin_session(&peer->handshake,
 						     &peer->keypairs)) {
@@ -148,7 +158,7 @@ void wg_packet_send_handshake_response(struct wg_peer *peer)
 			wg_socket_send_buffer_to_peer(peer, &packet,
 						      sizeof(packet),
 						      HANDSHAKE_DSCP,
-							  wg->junk_size[MSGIDX_HANDSHAKE_RESPONSE]);
+							  wg->resp_padding);
 		}
 	}
 }
@@ -163,10 +173,15 @@ void wg_packet_send_handshake_cookie(struct wg_device *wg,
 				wg->dev->name, initiating_skb);
 	wg_cookie_message_create(&packet, initiating_skb, sender_index,
 				 &wg->cookie_checker,
-				 mh_genheader(&wg->headers[MSGIDX_HANDSHAKE_COOKIE]));
+				 u32_range_pick_one(wg->cookie_header));
 	wg_socket_send_buffer_as_reply_to_skb(wg, initiating_skb, &packet,
 					      sizeof(packet),
-						  wg->junk_size[MSGIDX_HANDSHAKE_COOKIE]);
+						  wg->cookie_padding);
+}
+
+static int key_fresh_timeout(struct wg_peer *peer)
+{
+	return !u16_range_is_zero(peer->device->rekey_after_time) ? u16_range_pick_one(peer->device->rekey_after_time) : REKEY_AFTER_TIME;
 }
 
 static void keep_key_fresh(struct wg_peer *peer)
@@ -179,11 +194,31 @@ static void keep_key_fresh(struct wg_peer *peer)
 	send = keypair && READ_ONCE(keypair->sending.is_valid) &&
 	       (atomic64_read(&keypair->sending_counter) > REKEY_AFTER_MESSAGES ||
 		(keypair->i_am_the_initiator &&
-		 wg_birthdate_has_expired(keypair->sending.birthdate, REKEY_AFTER_TIME)));
+		 wg_birthdate_has_expired(keypair->sending.birthdate, key_fresh_timeout(peer))));
 	rcu_read_unlock_bh();
 
 	if (unlikely(send))
 		wg_packet_send_queued_handshake_initiation(peer, false);
+}
+
+static unsigned int randomize_skb_padding(struct sk_buff *skb, u16_range_t addition_range)
+{
+	unsigned int packet_size = skb->len, space;
+	u16 addition;
+
+	if (u16_range_is_zero(addition_range))
+		return 0;
+
+	addition = u16_range_pick_one(addition_range);
+	if (likely(PACKET_CB(skb)->mtu)) {
+		if (unlikely(packet_size > PACKET_CB(skb)->mtu))
+			packet_size %= PACKET_CB(skb)->mtu;
+
+		space = PACKET_CB(skb)->mtu - packet_size;
+		if (addition > space)
+			addition = space;
+	}
+	return addition;
 }
 
 static unsigned int calculate_skb_padding(struct sk_buff *skb)
@@ -207,14 +242,17 @@ static unsigned int calculate_skb_padding(struct sk_buff *skb)
 	return padded_size - last_unit;
 }
 
-static bool encrypt_packet(u32 message_type, size_t junk_size, struct sk_buff *skb, struct noise_keypair *keypair
-			   COMPAT_MAYBE_SIMD_CONTEXT(simd_context_t *simd_context))
+static bool encrypt_packet(struct wg_device *wg, struct sk_buff *skb, struct noise_keypair *keypair
+	COMPAT_MAYBE_SIMD_CONTEXT(simd_context_t *simd_context))
 {
 	unsigned int padding_len, plaintext_len, trailer_len;
 	struct scatterlist sg[MAX_SKB_FRAGS + 8];
+	struct chacha_state state;
 	struct message_data *header;
 	struct sk_buff *trailer;
+	char *crypto;
 	int num_frags;
+	int padding = wg->transport_padding;
 
 	/* Force hash calculation before encryption so that flow analysis is
 	 * consistent over the inner packet.
@@ -222,7 +260,9 @@ static bool encrypt_packet(u32 message_type, size_t junk_size, struct sk_buff *s
 	skb_get_hash(skb);
 
 	/* Calculate lengths. */
-	padding_len = calculate_skb_padding(skb);
+	padding_len = !u16_range_is_zero(wg->content_padding_addition) ?
+		randomize_skb_padding(skb, wg->content_padding_addition) :
+		calculate_skb_padding(skb);
 	trailer_len = padding_len + noise_encrypted_len(0);
 	plaintext_len = skb->len + padding_len;
 
@@ -239,7 +279,7 @@ static bool encrypt_packet(u32 message_type, size_t junk_size, struct sk_buff *s
 	/* Expand head section to have room for our header and the network
 	 * stack's headers.
 	 */
-	if (unlikely(skb_cow_head(skb, DATA_PACKET_HEAD_ROOM + junk_size) < 0))
+	if (unlikely(skb_cow_head(skb, DATA_PACKET_HEAD_ROOM + padding) < 0))
 		return false;
 
 	/* Finalize checksum calculation for the inner packet, if required. */
@@ -252,16 +292,20 @@ static bool encrypt_packet(u32 message_type, size_t junk_size, struct sk_buff *s
 	 */
 	skb_set_inner_network_header(skb, 0);
 	header = (struct message_data *)skb_push(skb, sizeof(*header));
-	header->header.type = cpu_to_le32(message_type);
+	header->header.type = cpu_to_le32(u32_range_pick_one(wg->transport_header));
 	header->key_idx = keypair->remote_index;
 	header->counter = cpu_to_le64(PACKET_CB(skb)->nonce);
 	pskb_put(skb, trailer, trailer_len);
 
-	get_random_bytes(skb_push(skb, junk_size), junk_size);
+	crypto = skb_push(skb, padding);
+	get_random_bytes(crypto, padding);
+
+	if (awg_header_protection_init(&state, wg, crypto))
+		chacha20_crypt(&state, (u8*)header, (u8*)header, sizeof(*header));
 
 	/* Now we can encrypt the scattergather segments */
 	sg_init_table(sg, num_frags);
-	if (skb_to_sgvec(skb, sg, sizeof(struct message_data) + junk_size,
+	if (skb_to_sgvec(skb, sg, sizeof(struct message_data) + padding,
 			 noise_encrypted_len(plaintext_len)) <= 0)
 		return false;
 	return chacha20poly1305_encrypt_sg_inplace(sg, plaintext_len, NULL, 0,
@@ -354,8 +398,7 @@ void wg_packet_encrypt_worker(struct work_struct *work)
 			wg = PACKET_PEER(first)->device;
 
 			if (likely(encrypt_packet(
-						  mh_genheader(&wg->headers[MSGIDX_TRANSPORT]),
-						  wg->junk_size[MSGIDX_TRANSPORT],
+						  wg,
 						  skb,
 						  PACKET_CB(first)->keypair
 						  COMPAT_MAYBE_SIMD_CONTEXT(&simd_context)))) {

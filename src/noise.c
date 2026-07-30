@@ -5,7 +5,6 @@
 
 #include "noise.h"
 #include "device.h"
-#include "magic_header.h"
 #include "peer.h"
 #include "messages.h"
 #include "queueing.h"
@@ -184,7 +183,7 @@ void wg_noise_expire_current_peer_keypairs(struct wg_peer *peer)
 	struct noise_keypair *keypair;
 
 	wg_noise_handshake_clear(&peer->handshake);
-	wg_noise_reset_last_sent_handshake(&peer->last_sent_handshake);
+	wg_peer_reset_last_sent_handshake(peer);
 
 	spin_lock_bh(&peer->keypairs.keypair_update_lock);
 	keypair = rcu_dereference_protected(peer->keypairs.next_keypair,
@@ -598,8 +597,6 @@ wg_noise_handshake_consume_initiation(struct message_handshake_initiation *src,
 	u8 e[NOISE_PUBLIC_KEY_LEN];
 	u8 t[NOISE_TIMESTAMP_LEN];
 	u64 initiation_consumption;
-	bool advanced_security = wg->advanced_security &&
-	                         mh_validate(SKB_TYPE_LE32(skb), &wg->headers[MSGIDX_HANDSHAKE_INIT]);
 
 	down_read(&wg->static_identity.lock);
 	if (unlikely(!wg->static_identity.has_identity))
@@ -626,11 +623,10 @@ wg_noise_handshake_consume_initiation(struct message_handshake_initiation *src,
 			goto out;
 
 		net_dbg_skb_ratelimited("%s: unknown peer from %pISpfsc\n", wg->dev->name, skb);
-		wg_genl_mcast_peer_unknown(wg, s, endpoint, advanced_security);
+		wg_genl_mcast_peer_unknown(wg, s, endpoint);
 		goto out;
 	}
 	handshake = &peer->handshake;
-	peer->advanced_security = advanced_security;
 
 	/* ss */
 	if (!mix_precomputed_dh(chaining_key, key,

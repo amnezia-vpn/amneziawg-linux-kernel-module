@@ -52,7 +52,7 @@ struct wg_peer *wg_peer_create(struct wg_device *wg,
 	rwlock_init(&peer->endpoint_lock);
 	kref_init(&peer->refcount);
 	skb_queue_head_init(&peer->staged_packet_queue);
-	wg_noise_reset_last_sent_handshake(&peer->last_sent_handshake);
+	wg_peer_reset_last_sent_handshake(peer);
 	set_bit(NAPI_STATE_NO_BUSY_POLL, &peer->napi.state);
 #ifdef COMPAT_NETIF_HAS_WEIGHT
 	netif_napi_add(wg->dev, &peer->napi, wg_packet_rx_poll, NAPI_POLL_WEIGHT);
