@@ -445,10 +445,10 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 		    nla_put_u16(skb, WGDEVICE_A_S2,wg->resp_padding) ||
 			nla_put_u16(skb, WGDEVICE_A_S3, wg->cookie_padding) ||
 			nla_put_u16(skb, WGDEVICE_A_S4, wg->transport_padding) ||
-		    nla_put_uint(skb, WGDEVICE_A_H1, wg->init_header) ||
-			nla_put_uint(skb, WGDEVICE_A_H2, wg->resp_header) ||
-			nla_put_uint(skb, WGDEVICE_A_H3, wg->cookie_header) ||
-			nla_put_uint(skb, WGDEVICE_A_H4, wg->transport_header) ||
+		    nla_put(skb, WGDEVICE_A_H1, sizeof(u64), &wg->init_header) ||
+			nla_put(skb, WGDEVICE_A_H2, sizeof(u64), &wg->resp_header) ||
+			nla_put(skb, WGDEVICE_A_H3, sizeof(u64), &wg->cookie_header) ||
+			nla_put(skb, WGDEVICE_A_H4, sizeof(u64), &wg->transport_header) ||
 			nla_put_u32(skb, WGDEVICE_A_CONTENT_PADDING_ADDITION, wg->content_padding_addition) ||
 			nla_put_u32(skb, WGDEVICE_A_REKEY_AFTER_TIME, wg->rekey_after_time) ||
 			nla_put_u32(skb, WGDEVICE_A_REKEY_TIMEOUT, wg->rekey_timeout) ||
