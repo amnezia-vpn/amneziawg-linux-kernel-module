@@ -1,0 +1,25 @@
+name: Build & Publish packages
+
+on:
+  push:
+    tags: ['*']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or SHA to build from (empty = current commit)'
+        type: string
+        default: ''
+      publish:
+        description: 'Publish packages to repo.amnezia.io after building'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    uses: amnezia-vpn/infra-cicd/.github/workflows/build-amneziawg.yml@master
+    with:
+      component: kmod
+      source: public
+      ref: ${{ inputs.ref || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '') }}
+      publish: ${{ inputs.publish == true || startsWith(github.ref, 'refs/tags/') }}
+    secrets: inherit
