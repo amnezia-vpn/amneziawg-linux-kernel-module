@@ -950,21 +950,25 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 		if (wg->init_padding < HEADER_PROTECTION_NONCE_SIZE) {
 			net_dbg_ratelimited("%s: S1 must be more then %d to use headerProtection\n",
 				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			ret = -EINVAL;
 			goto out;
 		}
 		if (wg->resp_padding < HEADER_PROTECTION_NONCE_SIZE) {
 			net_dbg_ratelimited("%s: S2 must be more then %d to use headerProtection\n",
 				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			ret = -EINVAL;
 			goto out;
 		}
 		if (wg->cookie_padding < HEADER_PROTECTION_NONCE_SIZE) {
 			net_dbg_ratelimited("%s: S3 must be more then %d to use headerProtection\n",
 				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			ret = -EINVAL;
 			goto out;
 		}
 		if (wg->transport_padding < HEADER_PROTECTION_NONCE_SIZE) {
 			net_dbg_ratelimited("%s: S4 must be more then %d to use headerProtection\n",
 				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			ret = -EINVAL;
 			goto out;
 		}
 		awg_header_protection_set_key(&wg->header_protection,
