@@ -946,9 +946,30 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 
 	if (info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY] &&
 		nla_len(info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY])
-			== HEADER_PROTECTION_KEY_SIZE)
+			== HEADER_PROTECTION_KEY_SIZE) {
+		if (wg->init_padding < HEADER_PROTECTION_NONCE_SIZE) {
+			net_dbg_ratelimited("%s: S1 must be more then %d to use headerProtection\n",
+				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			goto out;
+		}
+		if (wg->resp_padding < HEADER_PROTECTION_NONCE_SIZE) {
+			net_dbg_ratelimited("%s: S2 must be more then %d to use headerProtection\n",
+				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			goto out;
+		}
+		if (wg->cookie_padding < HEADER_PROTECTION_NONCE_SIZE) {
+			net_dbg_ratelimited("%s: S3 must be more then %d to use headerProtection\n",
+				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			goto out;
+		}
+		if (wg->transport_padding < HEADER_PROTECTION_NONCE_SIZE) {
+			net_dbg_ratelimited("%s: S4 must be more then %d to use headerProtection\n",
+				wg->dev->name, HEADER_PROTECTION_NONCE_SIZE);
+			goto out;
+		}
 		awg_header_protection_set_key(&wg->header_protection,
 			nla_data(info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY]));
+	}
 
 	if (info->attrs[WGDEVICE_A_CONTENT_PADDING_ADDITION])
 		wg->content_padding_addition = nla_get_u32(info->attrs[WGDEVICE_A_CONTENT_PADDING_ADDITION]);
