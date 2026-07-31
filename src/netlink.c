@@ -929,7 +929,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[WGDEVICE_A_I4]) {
-		ret = jp_spec_setup(&wg->ispecs[0], nla_data(info->attrs[WGDEVICE_A_I4]));
+		ret = jp_spec_setup(&wg->ispecs[3], nla_data(info->attrs[WGDEVICE_A_I4]));
 		if (ret) {
 			net_dbg_ratelimited("%s: I4-packet invalid format\n", wg->dev->name);
 			goto out;
@@ -937,7 +937,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[WGDEVICE_A_I5]) {
-		ret = jp_spec_setup(&wg->ispecs[0], nla_data(info->attrs[WGDEVICE_A_I5]));
+		ret = jp_spec_setup(&wg->ispecs[4], nla_data(info->attrs[WGDEVICE_A_I5]));
 		if (ret) {
 			net_dbg_ratelimited("%s: I5-packet invalid format\n", wg->dev->name);
 			goto out;
