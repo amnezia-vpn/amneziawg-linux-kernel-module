@@ -34,7 +34,7 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 	u16 junk_packet_count, junk_packet_size;
 	int i;
 	struct jp_spec* spec;
-	u16 min_timeout = u16_range_is_zero(peer->device->rekey_timeout) ?
+	u16 min_timeout = !u16_range_is_zero(peer->device->rekey_timeout) ?
 		u16_range_lo(peer->device->rekey_timeout) : REKEY_TIMEOUT;
 
 	if (!wg_birthdate_has_expired(atomic64_read(&peer->last_sent_handshake),
@@ -103,7 +103,7 @@ void wg_packet_handshake_send_worker(struct work_struct *work)
 void wg_packet_send_queued_handshake_initiation(struct wg_peer *peer,
 						bool is_retry)
 {
-	u16 min_timeout = u16_range_is_zero(peer->device->rekey_timeout) ?
+	u16 min_timeout = !u16_range_is_zero(peer->device->rekey_timeout) ?
 		u16_range_lo(peer->device->rekey_timeout) : REKEY_TIMEOUT;
 
 	if (!is_retry) {
