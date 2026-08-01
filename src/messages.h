@@ -61,13 +61,6 @@ enum message_type {
 	MESSAGE_DATA = 4
 };
 
-enum message_index {
-	MSGIDX_HANDSHAKE_INIT = MESSAGE_HANDSHAKE_INITIATION - 1,
-	MSGIDX_HANDSHAKE_RESPONSE = MESSAGE_HANDSHAKE_RESPONSE - 1,
-	MSGIDX_HANDSHAKE_COOKIE = MESSAGE_HANDSHAKE_COOKIE - 1,
-	MSGIDX_TRANSPORT = MESSAGE_DATA - 1
-};
-
 struct message_header {
 	/* The actual layout of this that we want is:
 	 * u8 type
@@ -122,14 +115,6 @@ struct message_data {
 enum message_alignments {
 	MESSAGE_PADDING_MULTIPLE = 16,
 	MESSAGE_MINIMUM_LENGTH = message_data_len(0)
-};
-
-enum message_size {
-	MESSAGE_INITIATION_SIZE = sizeof(struct message_handshake_initiation),
-	MESSAGE_RESPONSE_SIZE = sizeof(struct message_handshake_response),
-	MESSAGE_COOKIE_REPLY_SIZE = sizeof(struct message_handshake_cookie),
-	MESSAGE_TRANSPORT_SIZE = sizeof(struct message_data),
-	MESSAGE_MAX_SIZE = 65535
 };
 
 #define SKB_TYPE_LE32(skb) (((struct message_header *)(skb)->data)->type)

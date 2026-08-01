@@ -1426,4 +1426,41 @@ static inline char *nla_strdup(const struct nlattr *nla, gfp_t flags)
             (blake2s)((u8 *)(out), (const u8 *)(in), (const u8 *)(key), (size_t)(outlen), (size_t)(inlen), (size_t)(keylen))
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 1, 0) && !IS_ENABLED(CONFIG_IPV6)
+#include <net/ipv6_stubs.h>
+static inline struct dst_entry *ip6_dst_lookup_flow(struct net *net, const struct sock *sk, struct flowi6 *fl6,
+				      const struct in6_addr *final_dst) {
+	return ipv6_stub->ipv6_dst_lookup_flow(net, sk, fl6, final_dst);
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+#include <crypto/chacha.h>
+#define CHACHA_KEY_WORDS	8
+#ifndef CHACHA_STATE_WORDS
+#define CHACHA_STATE_WORDS	(CHACHA_BLOCK_SIZE / sizeof(u32))
+#endif
+
+struct chacha_state {
+	u32 x[CHACHA_STATE_WORDS];
+};
+
+static inline void __compat_chacha_init(struct chacha_state *state,
+					const u32 *key,
+					const u8 *iv)
+{
+	(chacha_init)(state->x, key, iv);
+}
+#define chacha_init(state, key, iv) __compat_chacha_init((state), (key), (iv))
+
+static inline void __compat_chacha20_crypt(struct chacha_state *state,
+					       u8 *dst, const u8 *src,
+					       unsigned int bytes)
+{
+	(chacha20_crypt)(state->x, dst, src, bytes);
+}
+#define chacha20_crypt(s, d, src, b) __compat_chacha20_crypt((s),(d),(src),(b))
+
+#endif
+
 #endif /* _WG_COMPAT_H */

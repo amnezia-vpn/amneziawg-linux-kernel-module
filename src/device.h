@@ -11,7 +11,8 @@
 #include "allowedips.h"
 #include "peerlookup.h"
 #include "cookie.h"
-#include "magic_header.h"
+#include "header_protection.h"
+#include "type.h"
 
 #include <linux/types.h>
 #include <linux/netdevice.h>
@@ -52,22 +53,20 @@ struct wg_device {
 	struct allowedips peer_allowedips;
 	struct mutex device_update_lock, socket_update_lock;
 	struct list_head device_list, peer_list;
+	struct header_protection header_protection;
+	struct jp_spec ispecs[5];
+	u32_range_t init_header, resp_header, cookie_header, transport_header;
+	u16_range_t content_padding_addition, max_handshake_attempts;
+	u16_range_t rekey_after_time, rekey_timeout, reject_after_time, keepalive_timeout;
 	atomic_t handshake_queue_len;
 	unsigned int num_peers, device_update_gen;
 	u32 fwmark;
+	u16 init_padding, resp_padding, cookie_padding, transport_padding;
 	u16 incoming_port;
-
-	struct jp_spec ispecs[5];
-	struct magic_header headers[4];
-	u16 junk_size[4];
-	u16 jc;
-	u16 jmin;
-	u16 jmax;
-	bool advanced_security;
+	u16 jc, jmin, jmax;
 };
 
 int wg_device_init(void);
 void wg_device_uninit(void);
-int wg_device_handle_post_config(struct wg_device *wg);
 
 #endif /* _WG_DEVICE_H */
