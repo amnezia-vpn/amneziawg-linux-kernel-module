@@ -8,6 +8,7 @@
 #include "peer.h"
 #include "queueing.h"
 #include "socket.h"
+#include <linux/kernel.h>
 
 /*
  * - Timer for retransmitting the handshake if we don't hear back after
@@ -40,7 +41,7 @@ static inline void mod_peer_timer(struct wg_peer *peer,
 
 static void wg_expired_retransmit_handshake(struct timer_list *timer)
 {
-	struct wg_peer *peer = timer_container_of(peer, timer,
+	struct wg_peer *peer = container_of(timer, struct wg_peer,
 						  timer_retransmit_handshake);
 
 	if (peer->timer_handshake_attempts > MAX_TIMER_HANDSHAKES) {
@@ -78,7 +79,7 @@ static void wg_expired_retransmit_handshake(struct timer_list *timer)
 
 static void wg_expired_send_keepalive(struct timer_list *timer)
 {
-	struct wg_peer *peer = timer_container_of(peer, timer,
+	struct wg_peer *peer = container_of(timer, struct wg_peer,
 						  timer_send_keepalive);
 
 	wg_packet_send_keepalive(peer);
@@ -91,7 +92,7 @@ static void wg_expired_send_keepalive(struct timer_list *timer)
 
 static void wg_expired_new_handshake(struct timer_list *timer)
 {
-	struct wg_peer *peer = timer_container_of(peer, timer,
+	struct wg_peer *peer = container_of(timer, struct wg_peer,
 						  timer_new_handshake);
 
 	pr_debug("%s: Retrying handshake with peer %llu (%pISpfsc) because we stopped hearing back after %d seconds\n",
@@ -106,7 +107,7 @@ static void wg_expired_new_handshake(struct timer_list *timer)
 
 static void wg_expired_zero_key_material(struct timer_list *timer)
 {
-	struct wg_peer *peer = timer_container_of(peer, timer,
+	struct wg_peer *peer = container_of(timer, struct wg_peer,
 						  timer_zero_key_material);
 
 	rcu_read_lock_bh();
@@ -137,7 +138,7 @@ static void wg_queued_expired_zero_key_material(struct work_struct *work)
 
 static void wg_expired_send_persistent_keepalive(struct timer_list *timer)
 {
-	struct wg_peer *peer = timer_container_of(peer, timer,
+	struct wg_peer *peer = container_of(timer, struct wg_peer,
 						  timer_persistent_keepalive);
 
 	if (likely(peer->persistent_keepalive_interval))

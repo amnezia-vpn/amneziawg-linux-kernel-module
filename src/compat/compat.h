@@ -1302,10 +1302,6 @@ static inline int timer_delete(struct timer_list *timer)
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
-#define timer_container_of from_timer
-#endif
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 #include <linux/in6.h>
 struct sockaddr_inet {
@@ -1315,7 +1311,7 @@ struct sockaddr_inet {
 };
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 #include <linux/netdevice.h>
 static inline void netif_threaded_enable(struct net_device *dev) { }
 #endif
