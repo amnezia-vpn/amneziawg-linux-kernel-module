@@ -421,6 +421,7 @@ static void wg_packet_consume_data_done(struct wg_peer *peer,
 	struct net_device *dev = peer->device->dev;
 	unsigned int len, len_before_trim;
 	struct wg_peer *routed_peer;
+	u8 buf, *p = skb_header_pointer(skb, 0, 1, &buf);
 
 	wg_socket_set_peer_endpoint(peer, endpoint);
 
@@ -435,9 +436,11 @@ static void wg_packet_consume_data_done(struct wg_peer *peer,
 	wg_timers_any_authenticated_packet_received(peer);
 	wg_timers_any_authenticated_packet_traversal(peer);
 
-	/* A packet with length 0 is a keepalive packet */
-	if (unlikely(!skb->len)) {
-		update_rx_stats(peer, message_data_len(0));
+	/* A packet with length 0, or with all zeroes (content padding)
+	 * is a keepalive packet
+	 */
+	if (unlikely(!p || *p == 0)) {
+		update_rx_stats(peer, message_data_len(0) + skb->len);
 		net_dbg_ratelimited("%s: Receiving keepalive packet from peer %llu (%pISpfsc)\n",
 				    dev->name, peer->internal_id,
 				    &peer->endpoint.addr);

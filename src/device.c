@@ -208,6 +208,7 @@ static netdev_tx_t wg_xmit(struct sk_buff *skb, struct net_device *dev)
 		skb_dst_drop(skb);
 
 		PACKET_CB(skb)->mtu = mtu;
+		PACKET_CB(skb)->is_keepalive = false;
 
 		__skb_queue_tail(&packets, skb);
 	}

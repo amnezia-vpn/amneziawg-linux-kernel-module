@@ -63,6 +63,7 @@ struct packet_cb {
 	u32 mtu;
 	u32 type;
 	u8 ds;
+	bool is_keepalive;
 };
 
 #define PACKET_CB(skb) ((struct packet_cb *)((skb)->cb))
