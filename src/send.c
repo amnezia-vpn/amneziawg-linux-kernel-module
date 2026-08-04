@@ -326,6 +326,7 @@ void wg_packet_send_keepalive(struct wg_peer *peer)
 		skb_reserve(skb, DATA_PACKET_HEAD_ROOM);
 		skb->dev = peer->device->dev;
 		PACKET_CB(skb)->mtu = skb->dev->mtu;
+		PACKET_CB(skb)->is_keepalive = true;
 		skb_queue_tail(&peer->staged_packet_queue, skb);
 		net_dbg_ratelimited("%s: Sending keepalive packet to peer %llu (%pISpfsc)\n",
 				    peer->device->dev->name, peer->internal_id,
@@ -338,14 +339,13 @@ void wg_packet_send_keepalive(struct wg_peer *peer)
 static void wg_packet_create_data_done(struct wg_peer *peer, struct sk_buff *first)
 {
 	struct sk_buff *skb, *next;
-	bool is_keepalive, data_sent = false;
+	bool data_sent = false;
 
 	wg_timers_any_authenticated_packet_traversal(peer);
 	wg_timers_any_authenticated_packet_sent(peer);
 	skb_list_walk_safe(first, skb, next) {
-		is_keepalive = skb->len == message_data_len(0);
 		if (likely(!wg_socket_send_skb_to_peer(peer, skb,
-				PACKET_CB(skb)->ds) && !is_keepalive))
+				PACKET_CB(skb)->ds) && !PACKET_CB(skb)->is_keepalive))
 			data_sent = true;
 	}
 
