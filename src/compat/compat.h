@@ -18,6 +18,13 @@
 #define ISRHEL8
 #elif RHEL_MAJOR == 9
 #define ISRHEL9
+#elif RHEL_MAJOR == 10
+#define ISRHEL10
+#if RHEL_MINOR == 0
+#define ISRHEL100
+#elif RHEL_MINOR == 1
+#define ISRHEL101
+#endif
 #endif
 #endif
 #ifdef UTS_UBUNTU_RELEASE_ABI
@@ -1296,11 +1303,11 @@ static inline int timer_delete(struct timer_list *timer)
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0) && !(defined(ISRHEL10) && !(defined(ISRHEL100) || defined(ISRHEL101)))
 #define timer_container_of from_timer
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0) && !(defined(ISRHEL10) && !(defined(ISRHEL100) || defined(ISRHEL101)))
 #include <linux/in6.h>
 struct sockaddr_inet {
 	unsigned short	sa_family;
@@ -1309,7 +1316,7 @@ struct sockaddr_inet {
 };
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0) && !(defined(ISRHEL10) && !(defined(ISRHEL100) || defined(ISRHEL101)))
 #include <linux/netdevice.h>
 static inline void netif_threaded_enable(struct net_device *dev) { }
 #endif
@@ -1399,12 +1406,24 @@ static inline char *nla_strdup(const struct nlattr *nla, gfp_t flags)
 #define COMPAT_CANNOT_USE_NETLINK_MCGRPS
 #endif
 
-/* Kernel 6.19+ renamed blake2s_state to blake2s_ctx and changed blake2s() arg order */
+/* Kernel 6.19+ renamed blake2s_state to blake2s_ctx and changed blake2s() arg order.
+ * On kernels < 5.10 with zinc crypto (COMPAT_INIT_CRYPTO / ISUBUNTU2004), we must
+ * use zinc's own blake2s header to avoid duplicate symbol conflicts with the
+ * system <crypto/blake2s.h> whose names are already macro-remapped to zinc_*.
+ */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 19, 0)
-#include <crypto/blake2s.h>
-#define blake2s_ctx blake2s_state
-#define blake2s(key, keylen, in, inlen, out, outlen) \
-	blake2s(out, in, key, outlen, inlen, keylen)
+    #if defined(ISUBUNTU2004) || defined(COMPAT_INIT_CRYPTO)
+        #include "../crypto/include/zinc/blake2s.h"
+        #ifndef _CRYPTO_BLAKE2S_H
+            #define _CRYPTO_BLAKE2S_H
+        #endif
+    #else
+        #include <crypto/blake2s.h>
+    #endif
+
+    #define blake2s_ctx blake2s_state
+    #define blake2s(key, keylen, in, inlen, out, outlen) \
+            (blake2s)((u8 *)(out), (const u8 *)(in), (const u8 *)(key), (size_t)(outlen), (size_t)(inlen), (size_t)(keylen))
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(7, 1, 0) && !IS_ENABLED(CONFIG_IPV6)
