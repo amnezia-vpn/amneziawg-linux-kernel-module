@@ -1444,4 +1444,15 @@ static inline void __compat_chacha20_crypt(struct chacha_state *state,
 
 #endif
 
+/*
+* API break in 7.2, backported to 7.1.5 but no other stable series
+* https://github.com/torvalds/linux/commit/2cba193628fe523cee6dd61938db2c4563ce15a9
+* https://github.com/torvalds/linux/commit/944bfc1b1c6fe9417668006aae7124886bcca038
+*/
+#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 1, 5)
+#include <net/udp_tunnel.h>
+#define setup_udp_tunnel_sock(net, sk, sock_cfg) setup_udp_tunnel_sock(net, sk->sk_socket, sock_cfg)
+#define udp_tunnel_sock_release(sk) udp_tunnel_sock_release(sk->sk_socket)
+#endif
+
 #endif /* _WG_COMPAT_H */
