@@ -151,6 +151,10 @@ This setting should persist for future and will not require repeating.
 
 ### Kernel sourcetree could not be found automatically
 
+> [!IMPORTANT]
+> If your OS is using [the new deb822-style repository format](https://manpages.debian.org/bookworm/apt/sources.list.5.en.html#DEB822-STYLE_FORMAT) (Ubuntu 24.04, Debian 12),
+> in order to add the repository with kernel sourcetree, go to your system's sourcelist file (e.g. `/etc/apt/sources.list.d/ubuntu.sources`) and replace `Types: deb` with `Types: deb deb-src`.
+
 In some rare cases, setup script may not find your kernel's sourcetree automatically. You may find appropriate sources by yourself
 then and link them to DKMS module sources, e.g.
 
