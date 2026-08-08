@@ -41,44 +41,50 @@ static inline size_t awg_determine_type_and_padding(struct sk_buff *skb,
 	struct wg_device *wg, u8 hash[4], u16 *res_padding, u32 *res_type)
 {
 	void *ptr;
+	unsigned int expected_len;
 	u8 buf[4];
 	u16 padding;
+	bool random_trailer = wg->random_trailer;
 
 	padding = wg->init_padding;
-	if (skb->len == padding + sizeof(struct message_handshake_initiation) &&
+	expected_len = padding + sizeof(struct message_handshake_initiation);
+	if (random_trailer ? skb->len >= expected_len : skb->len == expected_len &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->init_header,
-			awg_decoded_type(ptr, hash))) {
+			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_INITIATION;
 		return sizeof(struct message_handshake_initiation);
 	}
 
 	padding = wg->resp_padding;
-	if (skb->len == padding + sizeof(struct message_handshake_response) &&
+	expected_len = padding + sizeof(struct message_handshake_response);
+	if (random_trailer ? skb->len >= expected_len : skb->len == expected_len &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->resp_header,
-			awg_decoded_type(ptr, hash))) {
+			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_RESPONSE;
 		return sizeof(struct message_handshake_response);
 	}
 
 	padding = wg->cookie_padding;
-	if (skb->len == padding + sizeof(struct message_handshake_cookie) &&
+	expected_len = padding + sizeof(struct message_handshake_cookie);
+	if (random_trailer ? skb->len >= expected_len : skb->len == expected_len &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->cookie_header, 
-			awg_decoded_type(ptr, hash))) {
+			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_COOKIE;
 		return sizeof(struct message_handshake_cookie);
 	}
 
 	padding = wg->transport_padding;
-	if (skb->len >= padding + MESSAGE_MINIMUM_LENGTH &&
+	expected_len = padding + MESSAGE_MINIMUM_LENGTH;
+	if (skb->len >= expected_len &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->transport_header,
-			awg_decoded_type(ptr, hash))) {
+			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_DATA;
 		return sizeof(struct message_data);
@@ -149,6 +155,9 @@ static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
 	if (unlikely(!header_len))
 		return -EINVAL;
 
+	if (type != MESSAGE_DATA && unlikely(pskb_trim(skb, padding + header_len)))
+		return -EINVAL;
+
 	PACKET_CB(skb)->type = type;
 
 	__skb_push(skb, data_offset);
@@ -197,7 +206,7 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 	    (!under_load && mac_state == VALID_MAC_BUT_NO_COOKIE)) {
 		packet_needs_cookie = false;
 	} else if (under_load && mac_state == VALID_MAC_BUT_NO_COOKIE) {
-		packet_needs_cookie = true;
+		packet_needs_cookie = wg->send_cookie;
 	} else {
 		net_dbg_skb_ratelimited("%s: Invalid MAC of handshake, dropping packet from %pISpfsc\n",
 					wg->dev->name, skb);

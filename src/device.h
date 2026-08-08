@@ -64,6 +64,7 @@ struct wg_device {
 	u16 init_padding, resp_padding, cookie_padding, transport_padding;
 	u16 incoming_port;
 	u16 jc, jmin, jmax;
+	bool random_trailer, send_cookie;
 };
 
 int wg_device_init(void);

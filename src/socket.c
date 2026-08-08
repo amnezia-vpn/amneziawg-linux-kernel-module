@@ -190,7 +190,8 @@ int wg_socket_send_buffer_to_peer(struct wg_peer *peer, void *buffer,
 				  size_t len, u8 ds, size_t padding)
 {
 	struct sk_buff *skb = alloc_skb(len + padding + SKB_HEADER_LEN, GFP_ATOMIC);
-	void* crypto;
+	struct wg_device *wg = peer->device;
+	void* crypto = NULL;
 	struct chacha_state state;
 
 	if (unlikely(!skb))
@@ -199,11 +200,20 @@ int wg_socket_send_buffer_to_peer(struct wg_peer *peer, void *buffer,
 	skb_reserve(skb, SKB_HEADER_LEN);
 	skb_set_inner_network_header(skb, 0);
 
-	crypto = skb_put(skb, padding);
-	get_random_bytes(crypto, padding);
+	if (padding) {
+		crypto = skb_put(skb, padding);
+		get_random_bytes(crypto, padding);
+	}
 
 	buffer = skb_put_data(skb, buffer, len);
-	if (padding != 0 &&
+
+	if (wg->random_trailer && wg->dev->mtu) {
+		padding = get_random_u32_below(
+			wg->dev->mtu + MESSAGE_MINIMUM_LENGTH - skb->len);
+		get_random_bytes(skb_put(skb, padding), padding);
+	}
+
+	if (crypto &&
 			awg_header_protection_init(&state, peer->device, crypto))
 		chacha20_crypt(&state, buffer, buffer, len);
 
