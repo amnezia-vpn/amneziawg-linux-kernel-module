@@ -174,6 +174,8 @@ enum wg_cmd {
 
 enum wgdevice_flag {
 	WGDEVICE_F_REPLACE_PEERS = 1U << 0,
+	WGDEVICE_F_RANDOM_TRAILER = 1U << 1,
+	WGDEVICE_F_SEND_COOKIE = 1U << 2,
 	__WGDEVICE_F_ALL = WGDEVICE_F_REPLACE_PEERS
 };
 enum wgdevice_attribute {

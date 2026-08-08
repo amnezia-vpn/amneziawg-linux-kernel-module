@@ -760,8 +760,12 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	rtnl_lock();
 	mutex_lock(&wg->device_update_lock);
 
-	if (info->attrs[WGDEVICE_A_FLAGS])
+	if (info->attrs[WGDEVICE_A_FLAGS]) {
 		flags = nla_get_u32(info->attrs[WGDEVICE_A_FLAGS]);
+		
+		wg->random_trailer = flags & WGDEVICE_F_RANDOM_TRAILER;
+		wg->send_cookie = flags & WGDEVICE_F_SEND_COOKIE;
+	}
 
 	if (info->attrs[WGDEVICE_A_LISTEN_PORT] || info->attrs[WGDEVICE_A_FWMARK]) {
 		struct net *net;
