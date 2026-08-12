@@ -344,8 +344,10 @@ static void wg_packet_create_data_done(struct wg_peer *peer, struct sk_buff *fir
 	wg_timers_any_authenticated_packet_traversal(peer);
 	wg_timers_any_authenticated_packet_sent(peer);
 	skb_list_walk_safe(first, skb, next) {
+		bool is_keepalive = PACKET_CB(skb)->is_keepalive;
+
 		if (likely(!wg_socket_send_skb_to_peer(peer, skb,
-				PACKET_CB(skb)->ds) && !PACKET_CB(skb)->is_keepalive))
+				PACKET_CB(skb)->ds) && !is_keepalive))
 			data_sent = true;
 	}
 
