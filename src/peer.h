@@ -68,6 +68,7 @@ struct wg_peer {
 	struct napi_struct napi;
 	u64 internal_id;
 	atomic_t jp_packet_counter;
+	unsigned int udp_window;
 };
 
 struct wg_peer *wg_peer_create(struct wg_device *wg,
@@ -92,6 +93,18 @@ static inline void wg_peer_reset_last_sent_handshake(struct wg_peer *peer)
 	u16 timeout = !u16_range_is_zero(peer->device->rekey_timeout) ? u16_range_lo(peer->device->rekey_timeout) : REKEY_TIMEOUT;
 	atomic64_set(&peer->last_sent_handshake, ktime_get_coarse_boottime_ns() -
 				       (u64)(timeout + 1) * NSEC_PER_SEC);
+}
+
+static inline unsigned int wg_peer_skb_random_trailer(struct wg_peer *peer,
+									struct wg_device *wg, unsigned int size)
+{
+	unsigned int udp_window = peer
+		? READ_ONCE(peer->udp_window)
+		: DEFAULT_UDP_WINDOW;
+
+	return wg->random_trailers && udp_window > size
+		? get_random_u32_below(udp_window - size)
+		: 0;
 }
 
 #endif /* _WG_PEER_H */
