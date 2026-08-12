@@ -749,13 +749,15 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	u32 flags = 0;
 	int ret;
 	u16 val16;
-	bool has_protection = awg_has_header_protection(wg) ||
-		info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY];
+	bool has_protection;
 
 	if (IS_ERR(wg)) {
 		ret = PTR_ERR(wg);
 		goto out_nodev;
 	}
+
+	has_protection = awg_has_header_protection(wg) ||
+		info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY];
 
 	rtnl_lock();
 	mutex_lock(&wg->device_update_lock);
