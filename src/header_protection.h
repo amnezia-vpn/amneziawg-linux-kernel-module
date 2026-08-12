@@ -19,7 +19,6 @@ struct header_protection {
     bool has_protection;
 };
 
-inline bool awg_has_header_protection(struct wg_device *wg);
 bool awg_header_protection_init(struct chacha_state *state, struct wg_device *dev, u8 *nonce);
 void awg_header_protection_set_key(struct header_protection *p, u8 key[HEADER_PROTECTION_KEY_SIZE]);
 void awg_header_protection_get_key(struct header_protection *p, u8 key[HEADER_PROTECTION_KEY_SIZE]);

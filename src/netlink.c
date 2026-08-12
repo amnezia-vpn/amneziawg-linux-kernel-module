@@ -67,6 +67,8 @@ static const struct nla_policy device_policy[WGDEVICE_A_MAX + 1] = {
 	[WGDEVICE_A_REJECT_AFTER_TIME] = { .type = NLA_U32 },
 	[WGDEVICE_A_KEEPALIVE_TIMEOUT] = { .type = NLA_U32 },
 	[WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS] = { .type = NLA_U32 },
+	[WGDEVICE_A_RANDOM_TRAILERS] = { .type = NLA_U8 },
+	[WGDEVICE_A_DISABLE_COOKIES] = { .type = NLA_U8 },
 };
 
 static const struct nla_policy peer_policy[WGPEER_A_MAX + 1] = {
@@ -454,7 +456,9 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 			nla_put_u32(skb, WGDEVICE_A_REKEY_TIMEOUT, wg->rekey_timeout) ||
 			nla_put_u32(skb, WGDEVICE_A_REJECT_AFTER_TIME, wg->reject_after_time) ||
 			nla_put_u32(skb, WGDEVICE_A_KEEPALIVE_TIMEOUT, wg->keepalive_timeout) ||
-			nla_put_u32(skb, WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS, wg->max_handshake_attempts))
+			nla_put_u32(skb, WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS, wg->max_handshake_attempts) ||
+			nla_put_u8(skb, WGDEVICE_A_RANDOM_TRAILERS, wg->random_trailers) ||
+			nla_put_u8(skb, WGDEVICE_A_DISABLE_COOKIES, wg->disable_cookies))
 			goto out;
 
 		if ((wg->ispecs[0].desc &&
@@ -749,8 +753,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	u32 flags = 0;
 	int ret;
 	u16 val16;
-	bool has_protection = awg_has_header_protection(wg) ||
-		info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY];
+	bool has_protection;
 
 	if (IS_ERR(wg)) {
 		ret = PTR_ERR(wg);
@@ -759,6 +762,9 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 
 	rtnl_lock();
 	mutex_lock(&wg->device_update_lock);
+
+	has_protection = wg->header_protection.has_protection ||
+		info->attrs[WGDEVICE_A_HEADER_PROTECTION_KEY];
 
 	if (info->attrs[WGDEVICE_A_FLAGS])
 		flags = nla_get_u32(info->attrs[WGDEVICE_A_FLAGS]);
@@ -992,6 +998,12 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 
 	if (info->attrs[WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS])
 		wg->max_handshake_attempts = nla_get_u32(info->attrs[WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS]);
+
+	if (info->attrs[WGDEVICE_A_RANDOM_TRAILERS])
+		wg->random_trailers = nla_get_u8(info->attrs[WGDEVICE_A_RANDOM_TRAILERS]);
+
+	if (info->attrs[WGDEVICE_A_DISABLE_COOKIES])
+		wg->disable_cookies = nla_get_u8(info->attrs[WGDEVICE_A_DISABLE_COOKIES]);
 
 	if (flags & WGDEVICE_F_REPLACE_PEERS)
 		wg_peer_remove_all(wg);

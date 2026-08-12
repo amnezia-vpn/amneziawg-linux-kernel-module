@@ -62,6 +62,7 @@ struct packet_cb {
 	atomic_t state;
 	u32 mtu;
 	u32 type;
+	u32 padding;
 	u8 ds;
 	bool is_keepalive;
 };

@@ -41,44 +41,50 @@ static inline size_t awg_determine_type_and_padding(struct sk_buff *skb,
 	struct wg_device *wg, u8 hash[4], u16 *res_padding, u32 *res_type)
 {
 	void *ptr;
+	unsigned int expected_len;
 	u8 buf[4];
 	u16 padding;
+	bool random_trailers = wg->random_trailers;
 
 	padding = wg->init_padding;
-	if (skb->len == padding + sizeof(struct message_handshake_initiation) &&
+	expected_len = padding + sizeof(struct message_handshake_initiation);
+	if ((random_trailers ? skb->len >= expected_len : skb->len == expected_len) &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->init_header,
-			awg_decoded_type(ptr, hash))) {
+			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_INITIATION;
 		return sizeof(struct message_handshake_initiation);
 	}
 
 	padding = wg->resp_padding;
-	if (skb->len == padding + sizeof(struct message_handshake_response) &&
+	expected_len = padding + sizeof(struct message_handshake_response);
+	if ((random_trailers ? skb->len >= expected_len : skb->len == expected_len) &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->resp_header,
-			awg_decoded_type(ptr, hash))) {
+			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_RESPONSE;
 		return sizeof(struct message_handshake_response);
 	}
 
 	padding = wg->cookie_padding;
-	if (skb->len == padding + sizeof(struct message_handshake_cookie) &&
+	expected_len = padding + sizeof(struct message_handshake_cookie);
+	if ((random_trailers ? skb->len >= expected_len : skb->len == expected_len) &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->cookie_header, 
-			awg_decoded_type(ptr, hash))) {
+			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_COOKIE;
 		return sizeof(struct message_handshake_cookie);
 	}
 
 	padding = wg->transport_padding;
-	if (skb->len >= padding + MESSAGE_MINIMUM_LENGTH &&
+	expected_len = padding + MESSAGE_MINIMUM_LENGTH;
+	if (skb->len >= expected_len &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->transport_header,
-			awg_decoded_type(ptr, hash))) {
+			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_DATA;
 		return sizeof(struct message_data);
@@ -99,7 +105,7 @@ static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
 	u8 buf[HEADER_PROTECTION_NONCE_SIZE], *ptr, hash[4] = {0};
 	u32 type;
 	u16 padding;
-	bool protected;
+	bool protected = false;
 
 	if (unlikely(!wg_check_packet_protocol(skb) ||
 		     skb_transport_header(skb) < skb->head ||
@@ -132,8 +138,7 @@ static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
 		/* Final len does not agree with calculated len */
 		return -EINVAL;
 
-	protected = awg_has_header_protection(wg);
-	if (protected) {
+	if (wg->header_protection.has_protection) {
 		ptr = skb_header_pointer(skb, 0, sizeof(buf), buf);
 		if (!ptr)
 			return -EINVAL;
@@ -149,7 +154,11 @@ static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
 	if (unlikely(!header_len))
 		return -EINVAL;
 
+	if (type != MESSAGE_DATA && unlikely(pskb_trim(skb, padding + header_len)))
+		return -EINVAL;
+
 	PACKET_CB(skb)->type = type;
+	PACKET_CB(skb)->padding = padding;
 
 	__skb_push(skb, data_offset);
 	if (unlikely(!pskb_may_pull(skb, data_offset + padding + header_len)))
@@ -530,6 +539,7 @@ int wg_packet_rx_poll(struct napi_struct *napi, int budget)
 	enum packet_state state;
 	struct sk_buff *skb;
 	int work_done = 0;
+	u32 udp_window;
 	bool free;
 
 	if (unlikely(budget <= 0))
@@ -556,6 +566,11 @@ int wg_packet_rx_poll(struct napi_struct *napi, int budget)
 
 		if (unlikely(wg_socket_endpoint_from_skb(&endpoint, skb)))
 			goto next;
+
+
+		udp_window = PACKET_CB(skb)->padding + MESSAGE_MINIMUM_LENGTH + skb->len;
+		if (READ_ONCE(peer->udp_window) < udp_window)
+			WRITE_ONCE(peer->udp_window, udp_window);
 
 		wg_reset_packet(skb, false);
 		wg_packet_consume_data_done(peer, skb, &endpoint);
@@ -641,6 +656,7 @@ void wg_packet_receive(struct wg_device *wg, struct sk_buff *skb)
 {
 	if (unlikely(prepare_skb_header(skb, wg) < 0))
 		goto err;
+
 	switch(PACKET_CB(skb)->type) {
 	case MESSAGE_HANDSHAKE_INITIATION:
 	case MESSAGE_HANDSHAKE_RESPONSE:

@@ -189,21 +189,31 @@ int wg_socket_send_skb_to_peer(struct wg_peer *peer, struct sk_buff *skb, u8 ds)
 int wg_socket_send_buffer_to_peer(struct wg_peer *peer, void *buffer,
 				  size_t len, u8 ds, size_t padding)
 {
-	struct sk_buff *skb = alloc_skb(len + padding + SKB_HEADER_LEN, GFP_ATOMIC);
-	void* crypto;
+	struct sk_buff *skb;
+	void *crypto = NULL;
+	size_t trailer_len;
 	struct chacha_state state;
 
+	trailer_len = wg_peer_skb_random_trailer(peer, peer->device, padding + len);
+	
+	skb = alloc_skb(len + padding + trailer_len + SKB_HEADER_LEN, GFP_ATOMIC);
 	if (unlikely(!skb))
 		return -ENOMEM;
 
 	skb_reserve(skb, SKB_HEADER_LEN);
 	skb_set_inner_network_header(skb, 0);
 
-	crypto = skb_put(skb, padding);
-	get_random_bytes(crypto, padding);
+	if (padding) {
+		crypto = skb_put(skb, padding);
+		get_random_bytes(crypto, padding);
+	}
 
 	buffer = skb_put_data(skb, buffer, len);
-	if (padding != 0 &&
+
+	if (trailer_len)
+		get_random_bytes(skb_put(skb, trailer_len), trailer_len);
+
+	if (crypto &&
 			awg_header_protection_init(&state, peer->device, crypto))
 		chacha20_crypt(&state, buffer, buffer, len);
 
@@ -212,12 +222,14 @@ int wg_socket_send_buffer_to_peer(struct wg_peer *peer, void *buffer,
 
 int wg_socket_send_buffer_as_reply_to_skb(struct wg_device *wg,
 					  struct sk_buff *in_skb, void *buffer,
-					  size_t len, size_t junk_size)
+					  size_t len, size_t padding)
 {
 	int ret = 0;
 	struct sk_buff *skb;
+	void* crypto = NULL;
+	struct chacha_state state;
 	struct endpoint endpoint;
-	void* junk;
+	unsigned int trailer_len;
 
 	if (unlikely(!in_skb))
 		return -EINVAL;
@@ -225,14 +237,27 @@ int wg_socket_send_buffer_as_reply_to_skb(struct wg_device *wg,
 	if (unlikely(ret < 0))
 		return ret;
 
-	skb = alloc_skb(len + junk_size + SKB_HEADER_LEN, GFP_ATOMIC);
+	trailer_len = wg_peer_skb_random_trailer(NULL, wg, padding + len);
+
+	skb = alloc_skb(padding + len + trailer_len + SKB_HEADER_LEN, GFP_ATOMIC);
 	if (unlikely(!skb))
 		return -ENOMEM;
 	skb_reserve(skb, SKB_HEADER_LEN);
 	skb_set_inner_network_header(skb, 0);
-	junk = skb_put(skb, junk_size);
-	get_random_bytes(junk, junk_size);
-	skb_put_data(skb, buffer, len);
+
+	if (padding) {
+		crypto = skb_put(skb, padding);
+		get_random_bytes(crypto, padding);
+	}
+
+	buffer = skb_put_data(skb, buffer, len);
+
+	if (trailer_len)
+		get_random_bytes(skb_put(skb, trailer_len), trailer_len);
+
+	if (crypto &&
+			awg_header_protection_init(&state, wg, crypto))
+		chacha20_crypt(&state, buffer, buffer, len);
 
 	if (endpoint.addr.sa_family == AF_INET)
 		ret = send4(wg, skb, &endpoint, 0, NULL);
@@ -307,6 +332,7 @@ void wg_socket_set_peer_endpoint(struct wg_peer *peer,
 	dst_cache_reset(&peer->endpoint_cache);
 out:
 	write_unlock_bh(&peer->endpoint_lock);
+	WRITE_ONCE(peer->udp_window, DEFAULT_UDP_WINDOW);
 }
 
 void wg_socket_set_peer_endpoint_from_skb(struct wg_peer *peer,
