@@ -355,6 +355,7 @@ static int wg_newlink(struct net_device *dev,
 
 	rcu_assign_pointer(wg->creating_net, link_net);
 	init_rwsem(&wg->static_identity.lock);
+	init_rwsem(&wg->header_protection.lock);
 	mutex_init(&wg->socket_update_lock);
 	mutex_init(&wg->device_update_lock);
 	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i)

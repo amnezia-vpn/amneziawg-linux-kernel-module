@@ -22,8 +22,8 @@ out:
 	return res;
 }
 
-void awg_header_protection_set_key(struct header_protection *p, u8 key[HEADER_PROTECTION_KEY_SIZE]) {	
-	down_read(&p->lock);
+void awg_header_protection_set_key(struct header_protection *p, u8 key[HEADER_PROTECTION_KEY_SIZE]) {
+	down_write(&p->lock);
 	p->key[0] = get_unaligned_le32(key + 0);
 	p->key[1] = get_unaligned_le32(key + 4);
 	p->key[2] = get_unaligned_le32(key + 8);
@@ -33,7 +33,7 @@ void awg_header_protection_set_key(struct header_protection *p, u8 key[HEADER_PR
 	p->key[6] = get_unaligned_le32(key + 24);
 	p->key[7] = get_unaligned_le32(key + 28);
 	p->has_protection = true;
-	up_read(&p->lock);
+	up_write(&p->lock);
 }
 
 void awg_header_protection_get_key(struct header_protection *p, u8 key[HEADER_PROTECTION_KEY_SIZE]) {
