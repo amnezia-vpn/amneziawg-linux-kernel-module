@@ -18,13 +18,6 @@
 #define ISRHEL8
 #elif RHEL_MAJOR == 9
 #define ISRHEL9
-#elif RHEL_MAJOR == 10
-#define ISRHEL10
-#if RHEL_MINOR == 0
-#define ISRHEL100
-#elif RHEL_MINOR == 1
-#define ISRHEL101
-#endif
 #endif
 #endif
 #ifdef UTS_UBUNTU_RELEASE_ABI
@@ -102,12 +95,12 @@
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 12, 0) && IS_ENABLED(CONFIG_IPV6) && !defined(ISRHEL7)
 #include <net/ipv6.h>
 struct ipv6_stub_type {
-	void *udpv6_encap_enable;
-	int (*ipv6_dst_lookup)(struct sock *sk, struct dst_entry **dst, struct flowi6 *fl6);
+    void *udpv6_encap_enable;
+    int (*ipv6_dst_lookup)(struct sock *sk, struct dst_entry **dst, struct flowi6 *fl6);
 };
 static const struct ipv6_stub_type ipv6_stub_impl = {
-	.udpv6_encap_enable = (void *)1,
-	.ipv6_dst_lookup = ip6_dst_lookup
+    .udpv6_encap_enable = (void *)1,
+    .ipv6_dst_lookup = ip6_dst_lookup
 };
 static const struct ipv6_stub_type *ipv6_stub = &ipv6_stub_impl;
 #endif
@@ -116,7 +109,7 @@ static const struct ipv6_stub_type *ipv6_stub = &ipv6_stub_impl;
 #include <net/addrconf.h>
 static inline bool ipv6_mod_enabled(void)
 {
-	return ipv6_stub != NULL && ipv6_stub->udpv6_encap_enable != NULL;
+    return ipv6_stub != NULL && ipv6_stub->udpv6_encap_enable != NULL;
 }
 #endif
 
@@ -125,7 +118,7 @@ static inline bool ipv6_mod_enabled(void)
 static inline void skb_reset_tc(struct sk_buff *skb)
 {
 #ifdef CONFIG_NET_CLS_ACT
-	skb->tc_verd = 0;
+    skb->tc_verd = 0;
 #endif
 }
 #endif
@@ -135,18 +128,18 @@ static inline void skb_reset_tc(struct sk_buff *skb)
 #include <linux/siphash.h>
 static inline u32 __compat_get_random_u32(void)
 {
-	static siphash_key_t key;
-	static u32 counter = 0;
+    static siphash_key_t key;
+    static u32 counter = 0;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
-	static bool has_seeded = false;
-	if (unlikely(!has_seeded)) {
-		get_random_bytes(&key, sizeof(key));
-		has_seeded = true;
-	}
+    static bool has_seeded = false;
+    if (unlikely(!has_seeded)) {
+	get_random_bytes(&key, sizeof(key));
+	has_seeded = true;
+    }
 #else
-	get_random_once(&key, sizeof(key));
+    get_random_once(&key, sizeof(key));
 #endif
-	return siphash_2u32(counter++, get_random_int(), &key);
+    return siphash_2u32(counter++, get_random_int(), &key);
 }
 #define get_random_u32 __compat_get_random_u32
 #endif
@@ -154,7 +147,7 @@ static inline u32 __compat_get_random_u32(void)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 18, 0) && !defined(ISRHEL7)
 static inline void netif_keep_dst(struct net_device *dev)
 {
-	dev->priv_flags &= ~IFF_XMIT_DST_RELEASE;
+    dev->priv_flags &= ~IFF_XMIT_DST_RELEASE;
 }
 #define COMPAT_CANNOT_USE_CSUM_LEVEL
 #endif
@@ -172,16 +165,16 @@ static inline void netif_keep_dst(struct net_device *dev)
 #ifndef netdev_alloc_pcpu_stats
 #define netdev_alloc_pcpu_stats(type)					\
 ({									\
-	typeof(type) __percpu *pcpu_stats = alloc_percpu(type);		\
-	if (pcpu_stats)	{						\
-		int __cpu;						\
-		for_each_possible_cpu(__cpu) {				\
-			typeof(type) *stat;				\
-			stat = per_cpu_ptr(pcpu_stats, __cpu);		\
-			u64_stats_init(&stat->syncp);			\
-		}							\
-	}								\
-	pcpu_stats;							\
+    typeof(type) __percpu *pcpu_stats = alloc_percpu(type);		\
+    if (pcpu_stats)	{						\
+	int __cpu;						\
+	for_each_possible_cpu(__cpu) {				\
+	    typeof(type) *stat;				\
+	    stat = per_cpu_ptr(pcpu_stats, __cpu);		\
+	    u64_stats_init(&stat->syncp);			\
+	}							\
+    }								\
+    pcpu_stats;							\
 })
 #endif
 #endif
@@ -190,11 +183,11 @@ static inline void netif_keep_dst(struct net_device *dev)
 #include "checksum/checksum_partial_compat.h"
 static inline void *__compat_pskb_put(struct sk_buff *skb, struct sk_buff *tail, int len)
 {
-	if (tail != skb) {
-		skb->data_len += len;
-		skb->len += len;
-	}
-	return skb_put(tail, len);
+    if (tail != skb) {
+	skb->data_len += len;
+	skb->len += len;
+    }
+    return skb_put(tail, len);
 }
 #define pskb_put __compat_pskb_put
 #endif
@@ -204,20 +197,20 @@ static inline void *__compat_pskb_put(struct sk_buff *skb, struct sk_buff *tail,
 static inline void skb_scrub_packet(struct sk_buff *skb, bool xnet)
 {
 #ifdef CONFIG_CAVIUM_OCTEON_IPFWD_OFFLOAD
-	memset(&skb->cvm_info, 0, sizeof(skb->cvm_info));
-	skb->cvm_reserved = 0;
+    memset(&skb->cvm_info, 0, sizeof(skb->cvm_info));
+    skb->cvm_reserved = 0;
 #endif
-	skb->tstamp.tv64 = 0;
-	skb->pkt_type = PACKET_HOST;
-	skb->skb_iif = 0;
-	skb_dst_drop(skb);
-	secpath_reset(skb);
-	nf_reset(skb);
-	nf_reset_trace(skb);
-	if (!xnet)
-		return;
-	skb_orphan(skb);
-	skb->mark = 0;
+    skb->tstamp.tv64 = 0;
+    skb->pkt_type = PACKET_HOST;
+    skb->skb_iif = 0;
+    skb_dst_drop(skb);
+    secpath_reset(skb);
+    nf_reset(skb);
+    nf_reset_trace(skb);
+    if (!xnet)
+	return;
+    skb_orphan(skb);
+    skb->mark = 0;
 }
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 12, 0) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)
 #define skb_scrub_packet(a, b) skb_scrub_packet(a)
@@ -227,7 +220,7 @@ static inline void skb_scrub_packet(struct sk_buff *skb, bool xnet)
 #include <linux/random.h>
 static inline u32 __compat_prandom_u32_max(u32 ep_ro)
 {
-	return (u32)(((u64)prandom_u32() * ep_ro) >> 32);
+    return (u32)(((u64)prandom_u32() * ep_ro) >> 32);
 }
 #define prandom_u32_max __compat_prandom_u32_max
 #endif
@@ -275,8 +268,8 @@ static inline u32 __compat_prandom_u32_max(u32 ep_ro)
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 3) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 16, 35) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 24) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 12, 33) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 60) && !defined(ISRHEL7))
 static inline void memzero_explicit(void *s, size_t count)
 {
-	memset(s, 0, count);
-	barrier();
+    memset(s, 0, count);
+    barrier();
 }
 #endif
 
@@ -290,34 +283,34 @@ static const struct in6_addr __compat_in6addr_any = IN6ADDR_ANY_INIT;
 #include <linux/random.h>
 #include <linux/errno.h>
 struct rng_initializer {
-	struct completion done;
-	struct random_ready_callback cb;
+    struct completion done;
+    struct random_ready_callback cb;
 };
 static inline void rng_initialized_callback(struct random_ready_callback *cb)
 {
-	complete(&container_of(cb, struct rng_initializer, cb)->done);
+    complete(&container_of(cb, struct rng_initializer, cb)->done);
 }
 static inline int wait_for_random_bytes(void)
 {
-	static bool rng_is_initialized = false;
-	int ret;
-	if (unlikely(!rng_is_initialized)) {
-		struct rng_initializer rng = {
-			.done = COMPLETION_INITIALIZER(rng.done),
-			.cb = { .owner = THIS_MODULE, .func = rng_initialized_callback }
-		};
-		ret = add_random_ready_callback(&rng.cb);
-		if (!ret) {
-			ret = wait_for_completion_interruptible(&rng.done);
-			if (ret) {
-				del_random_ready_callback(&rng.cb);
-				return ret;
-			}
-		} else if (ret != -EALREADY)
-			return ret;
-		rng_is_initialized = true;
-	}
-	return 0;
+    static bool rng_is_initialized = false;
+    int ret;
+    if (unlikely(!rng_is_initialized)) {
+	struct rng_initializer rng = {
+	    .done = COMPLETION_INITIALIZER(rng.done),
+	    .cb = { .owner = THIS_MODULE, .func = rng_initialized_callback }
+	};
+	ret = add_random_ready_callback(&rng.cb);
+	if (!ret) {
+	    ret = wait_for_completion_interruptible(&rng.done);
+	    if (ret) {
+		del_random_ready_callback(&rng.cb);
+		return ret;
+	    }
+	} else if (ret != -EALREADY)
+	    return ret;
+	rng_is_initialized = true;
+    }
+    return 0;
 }
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
 /* This is a disaster. Without this API, we really have no way of
@@ -325,7 +318,7 @@ static inline int wait_for_random_bytes(void)
  * for the best... */
 static inline int wait_for_random_bytes(void)
 {
-	return 0;
+    return 0;
 }
 #endif
 
@@ -333,43 +326,43 @@ static inline int wait_for_random_bytes(void)
 #include <linux/random.h>
 #include <linux/slab.h>
 struct rng_is_initialized_callback {
-	struct random_ready_callback cb;
-	atomic_t *rng_state;
+    struct random_ready_callback cb;
+    atomic_t *rng_state;
 };
 static inline void rng_is_initialized_callback(struct random_ready_callback *cb)
 {
-	struct rng_is_initialized_callback *rdy = container_of(cb, struct rng_is_initialized_callback, cb);
-	atomic_set(rdy->rng_state, 2);
-	kfree(rdy);
+    struct rng_is_initialized_callback *rdy = container_of(cb, struct rng_is_initialized_callback, cb);
+    atomic_set(rdy->rng_state, 2);
+    kfree(rdy);
 }
 static inline bool rng_is_initialized(void)
 {
-	static atomic_t rng_state = ATOMIC_INIT(0);
+    static atomic_t rng_state = ATOMIC_INIT(0);
 
-	if (atomic_read(&rng_state) == 2)
-		return true;
+    if (atomic_read(&rng_state) == 2)
+	return true;
 
-	if (atomic_cmpxchg(&rng_state, 0, 1) == 0) {
-		int ret;
-		struct rng_is_initialized_callback *rdy = kmalloc(sizeof(*rdy), GFP_ATOMIC);
-		if (!rdy) {
-			atomic_set(&rng_state, 0);
-			return false;
-		}
-		rdy->cb.owner = THIS_MODULE;
-		rdy->cb.func = rng_is_initialized_callback;
-		rdy->rng_state = &rng_state;
-		ret = add_random_ready_callback(&rdy->cb);
-		if (ret)
-			kfree(rdy);
-		if (ret == -EALREADY) {
-			atomic_set(&rng_state, 2);
-			return true;
-		} else if (ret)
-			atomic_set(&rng_state, 0);
-		return false;
+    if (atomic_cmpxchg(&rng_state, 0, 1) == 0) {
+	int ret;
+	struct rng_is_initialized_callback *rdy = kmalloc(sizeof(*rdy), GFP_ATOMIC);
+	if (!rdy) {
+	    atomic_set(&rng_state, 0);
+	    return false;
 	}
+	rdy->cb.owner = THIS_MODULE;
+	rdy->cb.func = rng_is_initialized_callback;
+	rdy->rng_state = &rng_state;
+	ret = add_random_ready_callback(&rdy->cb);
+	if (ret)
+	    kfree(rdy);
+	if (ret == -EALREADY) {
+	    atomic_set(&rng_state, 2);
+	    return true;
+	} else if (ret)
+	    atomic_set(&rng_state, 0);
 	return false;
+    }
+    return false;
 }
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
 /* This is a disaster. Without this API, we really have no way of
@@ -377,18 +370,18 @@ static inline bool rng_is_initialized(void)
  * for the best... */
 static inline bool rng_is_initialized(void)
 {
-	return true;
+    return true;
 }
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0) || LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 320))
 static inline int get_random_bytes_wait(void *buf, int nbytes)
 {
-	int ret = wait_for_random_bytes();
-	if (unlikely(ret))
-		return ret;
-	get_random_bytes(buf, nbytes);
-	return 0;
+    int ret = wait_for_random_bytes();
+    if (unlikely(ret))
+	return ret;
+    get_random_bytes(buf, nbytes);
+    return 0;
 }
 #endif
 
@@ -411,9 +404,9 @@ static inline int get_random_bytes_wait(void *buf, int nbytes)
 static inline u64 __compat_jiffies64_to_nsecs(u64 j)
 {
 #if !(NSEC_PER_SEC % HZ)
-	return (NSEC_PER_SEC / HZ) * j;
+    return (NSEC_PER_SEC / HZ) * j;
 #else
-	return div_u64(j * HZ_TO_USEC_NUM, HZ_TO_USEC_DEN) * 1000;
+    return div_u64(j * HZ_TO_USEC_NUM, HZ_TO_USEC_DEN) * 1000;
 #endif
 }
 #define jiffies64_to_nsecs __compat_jiffies64_to_nsecs
@@ -421,11 +414,11 @@ static inline u64 __compat_jiffies64_to_nsecs(u64 j)
 static inline u64 ktime_get_coarse_boottime_ns(void)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0)
-	return ktime_to_ns(ktime_get_boottime());
+    return ktime_to_ns(ktime_get_boottime());
 #elif (LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 12) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)) || LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 53)
-	return ktime_to_ns(ktime_mono_to_any(ns_to_ktime(jiffies64_to_nsecs(get_jiffies_64())), TK_OFFS_BOOT));
+    return ktime_to_ns(ktime_mono_to_any(ns_to_ktime(jiffies64_to_nsecs(get_jiffies_64())), TK_OFFS_BOOT));
 #else
-	return ktime_to_ns(ktime_get_coarse_boottime());
+    return ktime_to_ns(ktime_get_coarse_boottime());
 #endif
 }
 #endif
@@ -434,48 +427,48 @@ static inline u64 ktime_get_coarse_boottime_ns(void)
 #include <linux/inetdevice.h>
 static inline __be32 __compat_confirm_addr_indev(struct in_device *in_dev, __be32 dst,  __be32 local, int scope)
 {
-	int same = 0;
-	__be32 addr = 0;
-	for_ifa(in_dev) {
-		if (!addr && (local == ifa->ifa_local || !local) && ifa->ifa_scope <= scope) {
-			addr = ifa->ifa_local;
-			if (same)
-				break;
+    int same = 0;
+    __be32 addr = 0;
+    for_ifa(in_dev) {
+	if (!addr && (local == ifa->ifa_local || !local) && ifa->ifa_scope <= scope) {
+	    addr = ifa->ifa_local;
+	    if (same)
+		break;
+	}
+	if (!same) {
+	    same = (!local || inet_ifa_match(local, ifa)) && (!dst || inet_ifa_match(dst, ifa));
+	    if (same && addr) {
+		if (local || !dst)
+		    break;
+		if (inet_ifa_match(addr, ifa))
+		    break;
+		if (ifa->ifa_scope <= scope) {
+		    addr = ifa->ifa_local;
+		    break;
 		}
-		if (!same) {
-			same = (!local || inet_ifa_match(local, ifa)) && (!dst || inet_ifa_match(dst, ifa));
-			if (same && addr) {
-				if (local || !dst)
-					break;
-				if (inet_ifa_match(addr, ifa))
-					break;
-				if (ifa->ifa_scope <= scope) {
-					addr = ifa->ifa_local;
-					break;
-				}
-				same = 0;
-			}
-		}
-	} endfor_ifa(in_dev);
-	return same ? addr : 0;
+		same = 0;
+	    }
+	}
+    } endfor_ifa(in_dev);
+    return same ? addr : 0;
 }
 static inline __be32 __compat_inet_confirm_addr(struct net *net, struct in_device *in_dev, __be32 dst, __be32 local, int scope)
 {
-	__be32 addr = 0;
-	struct net_device *dev;
-	if (in_dev)
-		return __compat_confirm_addr_indev(in_dev, dst, local, scope);
-	rcu_read_lock();
-	for_each_netdev_rcu(net, dev) {
-		in_dev = __in_dev_get_rcu(dev);
-		if (in_dev) {
-			addr = __compat_confirm_addr_indev(in_dev, dst, local, scope);
-			if (addr)
-				break;
-		}
+    __be32 addr = 0;
+    struct net_device *dev;
+    if (in_dev)
+	return __compat_confirm_addr_indev(in_dev, dst, local, scope);
+    rcu_read_lock();
+    for_each_netdev_rcu(net, dev) {
+	in_dev = __in_dev_get_rcu(dev);
+	if (in_dev) {
+	    addr = __compat_confirm_addr_indev(in_dev, dst, local, scope);
+	    if (addr)
+		break;
 	}
-	rcu_read_unlock();
-	return addr;
+    }
+    rcu_read_unlock();
+    return addr;
 }
 #define inet_confirm_addr __compat_inet_confirm_addr
 #endif
@@ -486,21 +479,21 @@ static inline __be32 __compat_inet_confirm_addr(struct net *net, struct in_devic
 #include <linux/slab.h>
 static inline void *__compat_kvmalloc(size_t size, gfp_t flags)
 {
-	gfp_t kmalloc_flags = flags;
-	void *ret;
-	if (size > PAGE_SIZE) {
-		kmalloc_flags |= __GFP_NOWARN;
-		if (!(kmalloc_flags & __GFP_REPEAT) || (size <= PAGE_SIZE << PAGE_ALLOC_COSTLY_ORDER))
-			kmalloc_flags |= __GFP_NORETRY;
-	}
-	ret = kmalloc(size, kmalloc_flags);
-	if (ret || size <= PAGE_SIZE)
-		return ret;
-	return __vmalloc(size, flags, PAGE_KERNEL);
+    gfp_t kmalloc_flags = flags;
+    void *ret;
+    if (size > PAGE_SIZE) {
+	kmalloc_flags |= __GFP_NOWARN;
+	if (!(kmalloc_flags & __GFP_REPEAT) || (size <= PAGE_SIZE << PAGE_ALLOC_COSTLY_ORDER))
+	    kmalloc_flags |= __GFP_NORETRY;
+    }
+    ret = kmalloc(size, kmalloc_flags);
+    if (ret || size <= PAGE_SIZE)
+	return ret;
+    return __vmalloc(size, flags, PAGE_KERNEL);
 }
 static inline void *__compat_kvzalloc(size_t size, gfp_t flags)
 {
-	return __compat_kvmalloc(size, flags | __GFP_ZERO);
+    return __compat_kvmalloc(size, flags | __GFP_ZERO);
 }
 #define kvmalloc __compat_kvmalloc
 #define kvzalloc __compat_kvzalloc
@@ -511,10 +504,10 @@ static inline void *__compat_kvzalloc(size_t size, gfp_t flags)
 #include <linux/mm.h>
 static inline void __compat_kvfree(const void *addr)
 {
-	if (is_vmalloc_addr(addr))
-		vfree(addr);
-	else
-		kfree(addr);
+    if (is_vmalloc_addr(addr))
+	vfree(addr);
+    else
+	kfree(addr);
 }
 #define kvfree __compat_kvfree
 #endif
@@ -524,9 +517,9 @@ static inline void __compat_kvfree(const void *addr)
 #include <linux/mm.h>
 static inline void *__compat_kvmalloc_array(size_t n, size_t size, gfp_t flags)
 {
-	if (n != 0 && SIZE_MAX / n < size)
-		return NULL;
-	return kvmalloc(n * size, flags);
+    if (n != 0 && SIZE_MAX / n < size)
+	return NULL;
+    return kvmalloc(n * size, flags);
 }
 #define kvmalloc_array __compat_kvmalloc_array
 #endif
@@ -560,7 +553,7 @@ static inline void *__compat_kvcalloc(size_t n, size_t size, gfp_t flags)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) && !defined(ISRHEL7)
 static inline struct nlattr **genl_family_attrbuf(const struct genl_family *family)
 {
-	return family->attrbuf;
+    return family->attrbuf;
 }
 #endif
 
@@ -593,11 +586,11 @@ static inline struct nlattr **genl_family_attrbuf(const struct genl_family *fami
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 2) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 16) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 65) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 101) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)) || LINUX_VERSION_CODE < KERNEL_VERSION(3, 18, 84)
 #define __COMPAT_NETLINK_DUMP_BLOCK { \
-	int ret; \
-	skb->end -= nlmsg_total_size(sizeof(int)); \
-	ret = wg_get_device_dump_real(skb, cb); \
-	skb->end += nlmsg_total_size(sizeof(int)); \
-	return ret; \
+    int ret; \
+    skb->end -= nlmsg_total_size(sizeof(int)); \
+    ret = wg_get_device_dump_real(skb, cb); \
+    skb->end += nlmsg_total_size(sizeof(int)); \
+    return ret; \
 }
 #define __COMPAT_NETLINK_DUMP_OVERRIDE
 #else
@@ -606,20 +599,20 @@ static inline struct nlattr **genl_family_attrbuf(const struct genl_family *fami
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 8) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 25) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)) || LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 87)
 #define wg_get_device_dump(a, b) wg_get_device_dump_real(a, b); \
 static int wg_get_device_dump(a, b) { \
-	struct wg_device *wg = (struct wg_device *)cb->args[0]; \
-	if (!wg) { \
-		int ret = wg_get_device_start(cb); \
-		if (ret) \
-			return ret; \
-	} \
-	__COMPAT_NETLINK_DUMP_BLOCK \
+    struct wg_device *wg = (struct wg_device *)cb->args[0]; \
+    if (!wg) { \
+	int ret = wg_get_device_start(cb); \
+	if (ret) \
+	    return ret; \
+    } \
+    __COMPAT_NETLINK_DUMP_BLOCK \
 } \
 static int wg_get_device_dump_real(a, b)
 #define COMPAT_CANNOT_USE_NETLINK_START
 #elif defined(__COMPAT_NETLINK_DUMP_OVERRIDE)
 #define wg_get_device_dump(a, b) wg_get_device_dump_real(a, b); \
 static int wg_get_device_dump(a, b) { \
-	__COMPAT_NETLINK_DUMP_BLOCK \
+    __COMPAT_NETLINK_DUMP_BLOCK \
 } \
 static int wg_get_device_dump_real(a, b)
 #endif
@@ -639,7 +632,7 @@ static int wg_get_device_dump_real(a, b)
 #include <asm/xcr.h>
 static inline int cpu_has_xfeatures(u64 xfeatures_needed, const char **feature_name)
 {
-	return boot_cpu_has(X86_FEATURE_XSAVE) && xgetbv(XCR_XFEATURE_ENABLED_MASK) & xfeatures_needed;
+    return boot_cpu_has(X86_FEATURE_XSAVE) && xgetbv(XCR_XFEATURE_ENABLED_MASK) & xfeatures_needed;
 }
 #endif
 #ifndef XFEATURE_MASK_YMM
@@ -693,9 +686,9 @@ struct __compat_dummy_container { char dev; };
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0) && !defined(ISRHEL7)
 static inline void *skb_put_data(struct sk_buff *skb, const void *data, unsigned int len)
 {
-	void *tmp = skb_put(skb, len);
-	memcpy(tmp, data, len);
-	return tmp;
+    void *tmp = skb_put(skb, len);
+    memcpy(tmp, data, len);
+    return tmp;
 }
 #endif
 
@@ -733,45 +726,45 @@ static inline void *skb_put_data(struct sk_buff *skb, const void *data, unsigned
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0) || LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 285)) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0) || LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 320))
 static inline void le32_to_cpu_array(u32 *buf, unsigned int words)
 {
-	while (words--) {
-		__le32_to_cpus(buf);
-		buf++;
-	}
+    while (words--) {
+	__le32_to_cpus(buf);
+	buf++;
+    }
 }
 static inline void cpu_to_le32_array(u32 *buf, unsigned int words)
 {
-	while (words--) {
-		__cpu_to_le32s(buf);
-		buf++;
-	}
+    while (words--) {
+	__cpu_to_le32s(buf);
+	buf++;
+    }
 }
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 #include <crypto/algapi.h>
 static inline void crypto_xor_cpy(u8 *dst, const u8 *src1, const u8 *src2,
-				  unsigned int size)
+		  unsigned int size)
 {
-	if (IS_ENABLED(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS) &&
-	    __builtin_constant_p(size) &&
-	    (size % sizeof(unsigned long)) == 0) {
-		unsigned long *d = (unsigned long *)dst;
-		unsigned long *s1 = (unsigned long *)src1;
-		unsigned long *s2 = (unsigned long *)src2;
+    if (IS_ENABLED(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS) &&
+        __builtin_constant_p(size) &&
+        (size % sizeof(unsigned long)) == 0) {
+	unsigned long *d = (unsigned long *)dst;
+	unsigned long *s1 = (unsigned long *)src1;
+	unsigned long *s2 = (unsigned long *)src2;
 
-		while (size > 0) {
-			*d++ = *s1++ ^ *s2++;
-			size -= sizeof(unsigned long);
-		}
-	} else {
-		if (unlikely(dst != src1))
-			memmove(dst, src1, size);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0)
-		crypto_xor(dst, src2, size);
-#else
-		__crypto_xor(dst, src2, size);
-#endif
+	while (size > 0) {
+	    *d++ = *s1++ ^ *s2++;
+	    size -= sizeof(unsigned long);
 	}
+    } else {
+	if (unlikely(dst != src1))
+	    memmove(dst, src1, size);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0)
+	crypto_xor(dst, src2, size);
+#else
+	__crypto_xor(dst, src2, size);
+#endif
+    }
 }
 #endif
 
@@ -789,14 +782,14 @@ static inline void crypto_xor_cpy(u8 *dst, const u8 *src1, const u8 *src2,
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 18, 0)
 struct __kernel_timespec {
-	int64_t tv_sec, tv_nsec;
+    int64_t tv_sec, tv_nsec;
 };
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0)
 #include <linux/time64.h>
 #ifdef __kernel_timespec
 #undef __kernel_timespec
 struct __kernel_timespec {
-	int64_t tv_sec, tv_nsec;
+    int64_t tv_sec, tv_nsec;
 };
 #endif
 #endif
@@ -824,15 +817,15 @@ struct __kernel_timespec {
 #include <linux/rcupdate.h>
 static __always_inline void old_synchronize_rcu(void)
 {
-	synchronize_rcu();
+    synchronize_rcu();
 }
 static __always_inline void old_call_rcu(void *a, void *b)
 {
-	call_rcu(a, b);
+    call_rcu(a, b);
 }
 static __always_inline void old_rcu_barrier(void)
 {
-	rcu_barrier();
+    rcu_barrier();
 }
 #ifdef synchronize_rcu
 #undef synchronize_rcu
@@ -852,7 +845,7 @@ static __always_inline void old_rcu_barrier(void)
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 10) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0) && !defined(ISRHEL8)) || LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 217)
 static inline void skb_mark_not_on_list(struct sk_buff *skb)
 {
-	skb->next = NULL;
+    skb->next = NULL;
 }
 #endif
 
@@ -883,12 +876,12 @@ static inline void skb_mark_not_on_list(struct sk_buff *skb)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0) && !defined(ISRHEL8) && !defined(ISRHEL9)
 #define genl_dumpit_info(cb) ({ \
-	struct { struct nlattr **attrs; } *a = (void *)((u8 *)cb->args + offsetofend(struct dump_ctx, next_allowedip)); \
-	BUILD_BUG_ON(sizeof(cb->args) < offsetofend(struct dump_ctx, next_allowedip) + sizeof(*a)); \
-	a->attrs = genl_family_attrbuf(&genl_family); \
-	if (nlmsg_parse(cb->nlh, GENL_HDRLEN + genl_family.hdrsize, a->attrs, genl_family.maxattr, device_policy, NULL) < 0) \
-		memset(a->attrs, 0, (genl_family.maxattr + 1) * sizeof(struct nlattr *)); \
-	a; \
+    struct { struct nlattr **attrs; } *a = (void *)((u8 *)cb->args + offsetofend(struct dump_ctx, next_allowedip)); \
+    BUILD_BUG_ON(sizeof(cb->args) < offsetofend(struct dump_ctx, next_allowedip) + sizeof(*a)); \
+    a->attrs = genl_family_attrbuf(&genl_family); \
+    if (nlmsg_parse(cb->nlh, GENL_HDRLEN + genl_family.hdrsize, a->attrs, genl_family.maxattr, device_policy, NULL) < 0) \
+	memset(a->attrs, 0, (genl_family.maxattr + 1) * sizeof(struct nlattr *)); \
+    a; \
 })
 #endif
 
@@ -896,8 +889,8 @@ static inline void skb_mark_not_on_list(struct sk_buff *skb)
 #include <linux/skbuff.h>
 #ifndef skb_list_walk_safe
 #define skb_list_walk_safe(first, skb, next)                                   \
-	for ((skb) = (first), (next) = (skb) ? (skb)->next : NULL; (skb);      \
-	     (skb) = (next), (next) = (skb) ? (skb)->next : NULL)
+    for ((skb) = (first), (next) = (skb) ? (skb)->next : NULL; (skb);      \
+         (skb) = (next), (next) = (skb) ? (skb)->next : NULL)
 #endif
 #endif
 
@@ -964,13 +957,13 @@ static inline void skb_mark_not_on_list(struct sk_buff *skb)
 #include <linux/skbuff.h>
 static inline int skb_ensure_writable(struct sk_buff *skb, int write_len)
 {
-	if (!pskb_may_pull(skb, write_len))
-		return -ENOMEM;
+    if (!pskb_may_pull(skb, write_len))
+	return -ENOMEM;
 
-	if (!skb_cloned(skb) || skb_clone_writable(skb, write_len))
-		return 0;
+    if (!skb_cloned(skb) || skb_clone_writable(skb, write_len))
+	return 0;
 
-	return pskb_expand_head(skb, 0, 0, GFP_ATOMIC);
+    return pskb_expand_head(skb, 0, 0, GFP_ATOMIC);
 }
 #endif
 
@@ -986,76 +979,76 @@ static inline int skb_ensure_writable(struct sk_buff *skb, int write_len)
 #endif
 static inline void __compat_icmp_ndo_send(struct sk_buff *skb_in, int type, int code, __be32 info)
 {
-	struct sk_buff *cloned_skb = NULL;
-	enum ip_conntrack_info ctinfo;
-	struct nf_conn *ct;
-	__be32 orig_ip;
+    struct sk_buff *cloned_skb = NULL;
+    enum ip_conntrack_info ctinfo;
+    struct nf_conn *ct;
+    __be32 orig_ip;
 
-	ct = nf_ct_get(skb_in, &ctinfo);
-	if (!ct || !(ct->status & IPS_SRC_NAT)) {
-		memset(skb_in->cb, 0, sizeof(skb_in->cb));
-		icmp_send(skb_in, type, code, info);
-		return;
-	}
-
-	if (skb_shared(skb_in))
-		skb_in = cloned_skb = skb_clone(skb_in, GFP_ATOMIC);
-
-	if (unlikely(!skb_in || skb_network_header(skb_in) < skb_in->head ||
-	    (skb_network_header(skb_in) + sizeof(struct iphdr)) >
-	    skb_tail_pointer(skb_in) || skb_ensure_writable(skb_in,
-	    skb_network_offset(skb_in) + sizeof(struct iphdr))))
-		goto out;
-
-	orig_ip = ip_hdr(skb_in)->saddr;
-	ip_hdr(skb_in)->saddr = ct->tuplehash[0].tuple.src.u3.ip;
+    ct = nf_ct_get(skb_in, &ctinfo);
+    if (!ct || !(ct->status & IPS_SRC_NAT)) {
 	memset(skb_in->cb, 0, sizeof(skb_in->cb));
 	icmp_send(skb_in, type, code, info);
-	ip_hdr(skb_in)->saddr = orig_ip;
+	return;
+    }
+
+    if (skb_shared(skb_in))
+	skb_in = cloned_skb = skb_clone(skb_in, GFP_ATOMIC);
+
+    if (unlikely(!skb_in || skb_network_header(skb_in) < skb_in->head ||
+        (skb_network_header(skb_in) + sizeof(struct iphdr)) >
+        skb_tail_pointer(skb_in) || skb_ensure_writable(skb_in,
+        skb_network_offset(skb_in) + sizeof(struct iphdr))))
+	goto out;
+
+    orig_ip = ip_hdr(skb_in)->saddr;
+    ip_hdr(skb_in)->saddr = ct->tuplehash[0].tuple.src.u3.ip;
+    memset(skb_in->cb, 0, sizeof(skb_in->cb));
+    icmp_send(skb_in, type, code, info);
+    ip_hdr(skb_in)->saddr = orig_ip;
 out:
-	consume_skb(cloned_skb);
+    consume_skb(cloned_skb);
 }
 static inline void __compat_icmpv6_ndo_send(struct sk_buff *skb_in, u8 type, u8 code, __u32 info)
 {
-	struct sk_buff *cloned_skb = NULL;
-	enum ip_conntrack_info ctinfo;
-	struct in6_addr orig_ip;
-	struct nf_conn *ct;
+    struct sk_buff *cloned_skb = NULL;
+    enum ip_conntrack_info ctinfo;
+    struct in6_addr orig_ip;
+    struct nf_conn *ct;
 
-	ct = nf_ct_get(skb_in, &ctinfo);
-	if (!ct || !(ct->status & IPS_SRC_NAT)) {
-		memset(skb_in->cb, 0, sizeof(skb_in->cb));
-		icmpv6_send(skb_in, type, code, info);
-		return;
-	}
-
-	if (skb_shared(skb_in))
-		skb_in = cloned_skb = skb_clone(skb_in, GFP_ATOMIC);
-
-	if (unlikely(!skb_in || skb_network_header(skb_in) < skb_in->head ||
-	    (skb_network_header(skb_in) + sizeof(struct ipv6hdr)) >
-	    skb_tail_pointer(skb_in) || skb_ensure_writable(skb_in,
-	    skb_network_offset(skb_in) + sizeof(struct ipv6hdr))))
-		goto out;
-
-	orig_ip = ipv6_hdr(skb_in)->saddr;
-	ipv6_hdr(skb_in)->saddr = ct->tuplehash[0].tuple.src.u3.in6;
+    ct = nf_ct_get(skb_in, &ctinfo);
+    if (!ct || !(ct->status & IPS_SRC_NAT)) {
 	memset(skb_in->cb, 0, sizeof(skb_in->cb));
 	icmpv6_send(skb_in, type, code, info);
-	ipv6_hdr(skb_in)->saddr = orig_ip;
+	return;
+    }
+
+    if (skb_shared(skb_in))
+	skb_in = cloned_skb = skb_clone(skb_in, GFP_ATOMIC);
+
+    if (unlikely(!skb_in || skb_network_header(skb_in) < skb_in->head ||
+        (skb_network_header(skb_in) + sizeof(struct ipv6hdr)) >
+        skb_tail_pointer(skb_in) || skb_ensure_writable(skb_in,
+        skb_network_offset(skb_in) + sizeof(struct ipv6hdr))))
+	goto out;
+
+    orig_ip = ipv6_hdr(skb_in)->saddr;
+    ipv6_hdr(skb_in)->saddr = ct->tuplehash[0].tuple.src.u3.in6;
+    memset(skb_in->cb, 0, sizeof(skb_in->cb));
+    icmpv6_send(skb_in, type, code, info);
+    ipv6_hdr(skb_in)->saddr = orig_ip;
 out:
-	consume_skb(cloned_skb);
+    consume_skb(cloned_skb);
 }
 #else
 static inline void __compat_icmp_ndo_send(struct sk_buff *skb_in, int type, int code, __be32 info)
 {
-	memset(skb_in->cb, 0, sizeof(skb_in->cb));
-	icmp_send(skb_in, type, code, info);
+    memset(skb_in->cb, 0, sizeof(skb_in->cb));
+    icmp_send(skb_in, type, code, info);
 }
 static inline void __compat_icmpv6_ndo_send(struct sk_buff *skb_in, u8 type, u8 code, __u32 info)
 {
-	memset(skb_in->cb, 0, sizeof(skb_in->cb));
-	icmpv6_send(skb_in, type, code, info);
+    memset(skb_in->cb, 0, sizeof(skb_in->cb));
+    icmpv6_send(skb_in, type, code, info);
 }
 #endif
 #define icmp_ndo_send __compat_icmp_ndo_send
@@ -1072,7 +1065,7 @@ static inline void __compat_icmpv6_ndo_send(struct sk_buff *skb_in, u8 type, u8 
 static inline void skb_reset_redirect(struct sk_buff *skb)
 {
 #ifdef CONFIG_NET_SCHED
-	skb_reset_tc(skb);
+    skb_reset_tc(skb);
 #endif
 }
 #endif
@@ -1100,15 +1093,15 @@ static inline void skb_reset_redirect(struct sk_buff *skb)
 #include <linux/ipv6.h>
 static inline __be16 ip_tunnel_parse_protocol(const struct sk_buff *skb)
 {
-	if (skb_network_header(skb) >= skb->head &&
-	    (skb_network_header(skb) + sizeof(struct iphdr)) <= skb_tail_pointer(skb) &&
-	    ip_hdr(skb)->version == 4)
-		return htons(ETH_P_IP);
-	if (skb_network_header(skb) >= skb->head &&
-	    (skb_network_header(skb) + sizeof(struct ipv6hdr)) <= skb_tail_pointer(skb) &&
-	    ipv6_hdr(skb)->version == 6)
-		return htons(ETH_P_IPV6);
-	return 0;
+    if (skb_network_header(skb) >= skb->head &&
+        (skb_network_header(skb) + sizeof(struct iphdr)) <= skb_tail_pointer(skb) &&
+        ip_hdr(skb)->version == 4)
+	return htons(ETH_P_IP);
+    if (skb_network_header(skb) >= skb->head &&
+        (skb_network_header(skb) + sizeof(struct ipv6hdr)) <= skb_tail_pointer(skb) &&
+        ipv6_hdr(skb)->version == 6)
+	return htons(ETH_P_IPV6);
+    return 0;
 }
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0) || defined(ISRHEL8)
 static const struct header_ops ip_tunnel_header_ops = { .parse_protocol = ip_tunnel_parse_protocol };
@@ -1142,13 +1135,13 @@ static const struct header_ops ip_tunnel_header_ops = { .parse_protocol = ip_tun
 #define COMPAT_HAS_DEFINED_DST_CACHE_PCPU
 #include <net/dst_cache.h>
 struct dst_cache_pcpu {
-	unsigned long refresh_ts;
-	struct dst_entry *dst;
-	u32 cookie;
-	union {
-		struct in_addr in_saddr;
-		struct in6_addr in6_saddr;
-	};
+    unsigned long refresh_ts;
+    struct dst_entry *dst;
+    u32 cookie;
+    union {
+	struct in_addr in_saddr;
+	struct in6_addr in6_saddr;
+    };
 };
 #endif
 
@@ -1158,20 +1151,20 @@ struct dst_cache_pcpu {
     !defined(ISRHEL9)
 static inline void dst_cache_reset_now(struct dst_cache *dst_cache)
 {
-	int i;
+    int i;
 
-	if (!dst_cache->cache)
-		return;
+    if (!dst_cache->cache)
+	return;
 
-	dst_cache->reset_ts = jiffies;
-	for_each_possible_cpu(i) {
-		struct dst_cache_pcpu *idst = per_cpu_ptr(dst_cache->cache, i);
-		struct dst_entry *dst = idst->dst;
+    dst_cache->reset_ts = jiffies;
+    for_each_possible_cpu(i) {
+	struct dst_cache_pcpu *idst = per_cpu_ptr(dst_cache->cache, i);
+	struct dst_entry *dst = idst->dst;
 
-		idst->cookie = 0;
-		idst->dst = NULL;
-		dst_release(dst);
-	}
+	idst->cookie = 0;
+	idst->dst = NULL;
+	dst_release(dst);
+    }
 }
 #endif
 
@@ -1231,10 +1224,10 @@ static inline void dst_cache_reset_now(struct dst_cache *dst_cache)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 84) && \
-	!(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 312) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)) && \
-	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 274) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0)) && \
-	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 215) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)) && \
-	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 154) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
+    !(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 312) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)) && \
+    !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 274) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0)) && \
+    !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 215) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)) && \
+    !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 154) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
 #define timer_delete_sync(timer) del_timer_sync(timer)
 #endif
 
@@ -1242,11 +1235,11 @@ static inline void dst_cache_reset_now(struct dst_cache *dst_cache)
 #include <linux/random.h>
 static inline u32 get_random_u32_below(u32 ceil)
 {
-	return get_random_u32() % ceil;
+    return get_random_u32() % ceil;
 }
 static inline u32 get_random_u32_inclusive(u32 floor, u32 ceil)
 {
-	return floor + get_random_u32_below(ceil - floor + 1);
+    return floor + get_random_u32_below(ceil - floor + 1);
 }
 #endif
 
@@ -1259,10 +1252,10 @@ static inline u32 get_random_u32_inclusive(u32 floor, u32 ceil)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 2) && \
-	!(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 296) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)) && \
-	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 229) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0)) && \
-	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 163) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)) && \
-	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 86) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
+    !(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 296) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)) && \
+    !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 229) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0)) && \
+    !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 163) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)) && \
+    !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 86) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
 #undef DEV_STATS_INC
 #define DEV_STATS_INC(DEV, FIELD) ++DEV->stats.FIELD
 #undef DEV_STATS_ADD
@@ -1285,13 +1278,13 @@ static inline u32 get_random_u32_inclusive(u32 floor, u32 ceil)
 #include <linux/if.h>
 #include <linux/if_tunnel.h>
 static inline void dev_sw_netstats_rx_add(struct net_device *dev, unsigned int len) {
-	struct pcpu_sw_netstats *tstats = get_cpu_ptr(dev->tstats);
+    struct pcpu_sw_netstats *tstats = get_cpu_ptr(dev->tstats);
 
-	u64_stats_update_begin(&tstats->syncp);
-	++tstats->rx_packets;
-	tstats->rx_bytes += len;
-	u64_stats_update_end(&tstats->syncp);
-	put_cpu_ptr(tstats);
+    u64_stats_update_begin(&tstats->syncp);
+    ++tstats->rx_packets;
+    tstats->rx_bytes += len;
+    u64_stats_update_end(&tstats->syncp);
+    put_cpu_ptr(tstats);
 }
 #endif
 
@@ -1299,24 +1292,20 @@ static inline void dev_sw_netstats_rx_add(struct net_device *dev, unsigned int l
 #include <linux/timer.h>
 static inline int timer_delete(struct timer_list *timer)
 {
-	return del_timer(timer);
+    return del_timer(timer);
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0) && !(defined(ISRHEL10) && !(defined(ISRHEL100) || defined(ISRHEL101)))
-#define timer_container_of from_timer
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0) && !(defined(ISRHEL10) && !(defined(ISRHEL100) || defined(ISRHEL101)))
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 #include <linux/in6.h>
 struct sockaddr_inet {
-	unsigned short	sa_family;
-	char		sa_data[sizeof(struct sockaddr_in6) -
-				sizeof(unsigned short)];
+    unsigned short	sa_family;
+    char		sa_data[sizeof(struct sockaddr_in6) -
+		sizeof(unsigned short)];
 };
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0) && !(defined(ISRHEL10) && !(defined(ISRHEL100) || defined(ISRHEL101)))
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 #include <linux/netdevice.h>
 static inline void netif_threaded_enable(struct net_device *dev) { }
 #endif
@@ -1333,15 +1322,15 @@ static inline void netif_threaded_enable(struct net_device *dev) { }
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 15, 0)
 #define COMPAT_CANNOT_USE_RTNL_NEWLINK_PARAMS
 struct rtnl_newlink_params {
-	struct net *src_net;
-	struct net *link_net;
-	struct net *peer_net;
-	struct nlattr **tb;
-	struct nlattr **data;
+    struct net *src_net;
+    struct net *link_net;
+    struct net *peer_net;
+    struct nlattr **tb;
+    struct nlattr **data;
 };
 static inline struct net *rtnl_newlink_link_net(struct rtnl_newlink_params *p)
 {
-	return p->link_net ? : p->src_net;
+    return p->link_net ? : p->src_net;
 }
 #endif
 
@@ -1363,7 +1352,7 @@ static inline void netif_set_tso_max_size(struct net_device *dev, unsigned int s
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
 static inline bool skb_queue_empty_lockless(const struct sk_buff_head *list)
 {
-	return READ_ONCE(list->next) == (const struct sk_buff *) list;
+    return READ_ONCE(list->next) == (const struct sk_buff *) list;
 }
 #endif
 
@@ -1374,18 +1363,18 @@ static inline bool skb_queue_empty_lockless(const struct sk_buff_head *list)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 static inline char *nla_strdup(const struct nlattr *nla, gfp_t flags)
 {
-	size_t srclen = nla_len(nla);
-	char *src = nla_data(nla), *dst;
+    size_t srclen = nla_len(nla);
+    char *src = nla_data(nla), *dst;
 
-	if (srclen > 0 && src[srclen - 1] == '\0')
-		srclen--;
+    if (srclen > 0 && src[srclen - 1] == '\0')
+	srclen--;
 
-	dst = kmalloc(srclen + 1, flags);
-	if (dst != NULL) {
-		memcpy(dst, src, srclen);
-		dst[srclen] = '\0';
-	}
-	return dst;
+    dst = kmalloc(srclen + 1, flags);
+    if (dst != NULL) {
+	memcpy(dst, src, srclen);
+	dst[srclen] = '\0';
+    }
+    return dst;
 }
 #endif
 
@@ -1411,14 +1400,14 @@ static inline char *nla_strdup(const struct nlattr *nla, gfp_t flags)
 #include <crypto/blake2s.h>
 #define blake2s_ctx blake2s_state
 #define blake2s(key, keylen, in, inlen, out, outlen) \
-	blake2s(out, in, key, outlen, inlen, keylen)
+    blake2s(out, in, key, outlen, inlen, keylen)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(7, 1, 0) && !IS_ENABLED(CONFIG_IPV6)
 #include <net/ipv6_stubs.h>
 static inline struct dst_entry *ip6_dst_lookup_flow(struct net *net, const struct sock *sk, struct flowi6 *fl6,
-				      const struct in6_addr *final_dst) {
-	return ipv6_stub->ipv6_dst_lookup_flow(net, sk, fl6, final_dst);
+		      const struct in6_addr *final_dst) {
+    return ipv6_stub->ipv6_dst_lookup_flow(net, sk, fl6, final_dst);
 }
 #endif
 
@@ -1430,22 +1419,22 @@ static inline struct dst_entry *ip6_dst_lookup_flow(struct net *net, const struc
 #endif
 
 struct chacha_state {
-	u32 x[CHACHA_STATE_WORDS];
+    u32 x[CHACHA_STATE_WORDS];
 };
 
 static inline void __compat_chacha_init(struct chacha_state *state,
-					const u32 *key,
-					const u8 *iv)
+		    const u32 *key,
+		    const u8 *iv)
 {
-	(chacha_init)(state->x, key, iv);
+    (chacha_init)(state->x, key, iv);
 }
 #define chacha_init(state, key, iv) __compat_chacha_init((state), (key), (iv))
 
 static inline void __compat_chacha20_crypt(struct chacha_state *state,
-					       u8 *dst, const u8 *src,
-					       unsigned int bytes)
+		           u8 *dst, const u8 *src,
+		           unsigned int bytes)
 {
-	(chacha20_crypt)(state->x, dst, src, bytes);
+    (chacha20_crypt)(state->x, dst, src, bytes);
 }
 #define chacha20_crypt(s, d, src, b) __compat_chacha20_crypt((s),(d),(src),(b))
 
