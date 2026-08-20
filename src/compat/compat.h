@@ -1450,4 +1450,8 @@ static inline void __compat_chacha20_crypt(struct chacha_state *state,
 #define udp_tunnel_sock_release(sk) udp_tunnel_sock_release(sk->sk_socket)
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0)
+#define WQ_PERCPU 0
+#endif
+
 #endif /* _WG_COMPAT_H */
