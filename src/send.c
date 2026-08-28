@@ -169,12 +169,6 @@ void wg_packet_send_handshake_cookie(struct wg_device *wg,
 {
 	struct message_handshake_cookie packet;
 
-	if (wg->disable_cookies) {
-		net_dbg_skb_ratelimited("%s: Sending cookie response disabled for %pISpfsc due to disabled cookies\n",
-				wg->dev->name, initiating_skb);
-		return;
-	}
-
 	net_dbg_skb_ratelimited("%s: Sending cookie response for denied handshake message for %pISpfsc\n",
 				wg->dev->name, initiating_skb);
 	wg_cookie_message_create(&packet, initiating_skb, sender_index,
