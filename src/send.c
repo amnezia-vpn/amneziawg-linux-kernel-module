@@ -169,12 +169,6 @@ void wg_packet_send_handshake_cookie(struct wg_device *wg,
 {
 	struct message_handshake_cookie packet;
 
-	if (wg->disable_cookies) {
-		net_dbg_skb_ratelimited("%s: Sending cookie response disabled for %pISpfsc due to disabled cookies\n",
-				wg->dev->name, initiating_skb);
-		return;
-	}
-
 	net_dbg_skb_ratelimited("%s: Sending cookie response for denied handshake message for %pISpfsc\n",
 				wg->dev->name, initiating_skb);
 	wg_cookie_message_create(&packet, initiating_skb, sender_index,
@@ -207,23 +201,6 @@ static void keep_key_fresh(struct wg_peer *peer)
 		wg_packet_send_queued_handshake_initiation(peer, false);
 }
 
-static unsigned int randomize_skb_padding(struct sk_buff *skb, u16_range_t addition_range)
-{
-	unsigned int packet_size = skb->len, space;
-	u16 addition;
-
-	addition = u16_range_pick_one(addition_range);
-	if (likely(PACKET_CB(skb)->mtu)) {
-		if (unlikely(packet_size > PACKET_CB(skb)->mtu))
-			packet_size %= PACKET_CB(skb)->mtu;
-
-		space = PACKET_CB(skb)->mtu - packet_size;
-		if (addition > space)
-			addition = space;
-	}
-	return addition;
-}
-
 static unsigned int calculate_skb_padding(struct sk_buff *skb)
 {
 	unsigned int padded_size, last_unit = skb->len;
@@ -249,7 +226,7 @@ static bool encrypt_packet(struct sk_buff *skb, struct noise_keypair *keypair
 	COMPAT_MAYBE_SIMD_CONTEXT(simd_context_t *simd_context))
 {
 	struct wg_peer *peer = keypair->entry.peer;
-	unsigned int padding_len, plaintext_len, trailer_len;
+	unsigned int padding_len, plaintext_len, trailer_len, packet_len;
 	struct scatterlist sg[MAX_SKB_FRAGS + 8];
 	struct chacha_state state;
 	struct message_data *header;
@@ -273,11 +250,11 @@ static bool encrypt_packet(struct sk_buff *skb, struct noise_keypair *keypair
 	skb_get_hash(skb);
 
 	/* Calculate lengths. */
+	packet_len = skb->len + MESSAGE_MINIMUM_LENGTH + padding;
 	if (!u16_range_is_zero(content_padding_addition)) {
-		padding_len = randomize_skb_padding(skb, content_padding_addition);
+		padding_len = wg_peer_skb_randomize_padding_addition(peer, peer->device, packet_len);
 	} else if (peer->device->random_trailers) {
-		padding_len = wg_peer_skb_random_trailer(peer, peer->device,
-			skb->len + MESSAGE_MINIMUM_LENGTH + padding);
+		padding_len = wg_peer_skb_random_trailer(peer, peer->device, packet_len);
 	} else {
 		padding_len = calculate_skb_padding(skb);
 	}

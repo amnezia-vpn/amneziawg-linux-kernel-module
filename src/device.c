@@ -355,6 +355,7 @@ static int wg_newlink(struct net_device *dev,
 
 	rcu_assign_pointer(wg->creating_net, link_net);
 	init_rwsem(&wg->static_identity.lock);
+	init_rwsem(&wg->header_protection.lock);
 	mutex_init(&wg->socket_update_lock);
 	mutex_init(&wg->device_update_lock);
 	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i)
@@ -379,7 +380,7 @@ static int wg_newlink(struct net_device *dev,
 #endif
 
 	wg->handshake_receive_wq = alloc_workqueue("wg-kex-%s",
-			WQ_CPU_INTENSIVE | WQ_FREEZABLE, 0, dev->name);
+			WQ_CPU_INTENSIVE | WQ_FREEZABLE | WQ_PERCPU, 0, dev->name);
 	if (!wg->handshake_receive_wq)
 		goto err_free_tstats;
 
@@ -389,7 +390,7 @@ static int wg_newlink(struct net_device *dev,
 		goto err_destroy_handshake_receive;
 
 	wg->packet_crypt_wq = alloc_workqueue("wg-crypt-%s",
-			WQ_CPU_INTENSIVE | WQ_MEM_RECLAIM, 0, dev->name);
+			WQ_CPU_INTENSIVE | WQ_MEM_RECLAIM | WQ_PERCPU, 0, dev->name);
 	if (!wg->packet_crypt_wq)
 		goto err_destroy_handshake_send;
 

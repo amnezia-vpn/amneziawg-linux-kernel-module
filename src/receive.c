@@ -191,7 +191,7 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 		return;
 	}
 
-	under_load = atomic_read(&wg->handshake_queue_len) >=
+	under_load = !wg->disable_cookies && atomic_read(&wg->handshake_queue_len) >=
 			MAX_QUEUED_INCOMING_HANDSHAKES / 8;
 	if (under_load) {
 		last_under_load = ktime_get_coarse_boottime_ns();
