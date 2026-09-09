@@ -18,6 +18,15 @@
 #define ISRHEL8
 #elif RHEL_MAJOR == 9
 #define ISRHEL9
+#elif RHEL_MAJOR == 10
+#define ISRHEL10
+#if RHEL_MINOR == 0
+#define ISRHEL100
+#elif RHEL_MINOR == 1
+#define ISRHEL101
+#elif RHEL_MINOR == 2
+#define ISRHEL102
+#endif
 #endif
 #endif
 #ifdef UTS_UBUNTU_RELEASE_ABI
@@ -1296,11 +1305,11 @@ static inline int timer_delete(struct timer_list *timer)
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0) && (!defined(ISRHEL10) || defined(ISRHEL100) || defined(ISRHEL101))
 #define timer_container_of from_timer
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0) && (!defined(ISRHEL10) || defined(ISRHEL100) || defined(ISRHEL101) || defined(ISRHEL102))
 #include <linux/in6.h>
 struct sockaddr_inet {
 	unsigned short	sa_family;
@@ -1309,7 +1318,7 @@ struct sockaddr_inet {
 };
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0) && (!defined(ISRHEL10) || defined(ISRHEL100) || defined(ISRHEL101))
 #include <linux/netdevice.h>
 static inline void netif_threaded_enable(struct net_device *dev) { }
 #endif
