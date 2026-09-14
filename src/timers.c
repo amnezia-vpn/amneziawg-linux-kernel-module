@@ -44,8 +44,8 @@ static void wg_expired_retransmit_handshake(struct timer_list *timer)
 {
 	struct wg_peer *peer = timer_container_of(peer, timer,
 						  timer_retransmit_handshake);
-	u16 timeout = !u16_range_is_zero(peer->device->rekey_after_time) ?
-		u16_range_pick_one(peer->device->rekey_after_time) : REJECT_AFTER_TIME;
+	u16 timeout = !u16_range_is_zero(peer->device->reject_after_time) ?
+		u16_range_pick_one(peer->device->reject_after_time) : REJECT_AFTER_TIME;
 
 	if (peer->timer_handshake_attempts > peer->max_handshake_attempts) {
 		pr_debug("%s: Handshake for peer %llu (%pISpfsc) did not complete after %d attempts, giving up\n",
