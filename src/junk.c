@@ -109,7 +109,7 @@ static int parse_r_tag(char* val, struct list_head* head) {
     struct jp_tag* tag;
     int len;
 
-    if (!val || 0 > kstrtoint(val, 10, &len))
+    if (!val || 0 > kstrtoint(val, 10, &len) || len < 0)
         return -EINVAL;
 
     tag = kzalloc(sizeof(*tag), GFP_KERNEL);
@@ -140,7 +140,7 @@ static int parse_rc_tag(char* val, struct list_head* head) {
     struct jp_tag* tag;
     int len;
 
-    if (!val || 0 > kstrtoint(val, 10, &len))
+    if (!val || 0 > kstrtoint(val, 10, &len) || len < 0)
         return -EINVAL;
 
     tag = kzalloc(sizeof(*tag), GFP_KERNEL);
@@ -167,7 +167,7 @@ static int parse_rd_tag(char* val, struct list_head* head) {
     struct jp_tag* tag;
     int len;
 
-    if (!val || 0 > kstrtoint(val, 10, &len))
+    if (!val || 0 > kstrtoint(val, 10, &len) || len < 0)
         return -EINVAL;
 
     tag = kzalloc(sizeof(*tag), GFP_KERNEL);
