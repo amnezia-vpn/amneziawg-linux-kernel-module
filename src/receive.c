@@ -301,10 +301,12 @@ void wg_packet_handshake_receive_worker(struct work_struct *work)
 
 static int key_fresh_timeout(struct wg_peer *peer)
 {
-	return
+	int timeout =
 		(!u16_range_is_zero(peer->device->reject_after_time) ? u16_range_pick_one(peer->device->reject_after_time) : REJECT_AFTER_TIME) -
 		(!u16_range_is_zero(peer->device->keepalive_timeout) ? u16_range_lo(peer->device->keepalive_timeout) : KEEPALIVE_TIMEOUT) -
 		(!u16_range_is_zero(peer->device->rekey_timeout) ? u16_range_lo(peer->device->rekey_timeout) : REKEY_TIMEOUT);
+
+	return timeout > 0 ? timeout : 0;
 }
 
 static void keep_key_fresh(struct wg_peer *peer)
