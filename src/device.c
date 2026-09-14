@@ -257,9 +257,6 @@ static void wg_destruct(struct net_device *dev)
 	struct wg_device *wg = netdev_priv(dev);
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i)
-		jp_spec_free(&wg->ispecs[i]);
-
 	rtnl_lock();
 	list_del(&wg->device_list);
 	rtnl_unlock();
@@ -272,6 +269,8 @@ static void wg_destruct(struct net_device *dev)
 	destroy_workqueue(wg->handshake_receive_wq);
 	destroy_workqueue(wg->handshake_send_wq);
 	destroy_workqueue(wg->packet_crypt_wq);
+	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i)
+		jp_spec_free(&wg->ispecs[i]);
 	wg_packet_queue_free(&wg->handshake_queue, true);
 	wg_packet_queue_free(&wg->decrypt_queue, false);
 	wg_packet_queue_free(&wg->encrypt_queue, false);
