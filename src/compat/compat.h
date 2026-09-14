@@ -876,8 +876,7 @@ static inline void skb_mark_not_on_list(struct sk_buff *skb)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0) && !defined(ISRHEL8) && !defined(ISRHEL9)
 #define genl_dumpit_info(cb) ({ \
-	struct { struct nlattr **attrs; } *a = (void *)((u8 *)cb->args + offsetofend(struct dump_ctx, next_allowedip)); \
-	BUILD_BUG_ON(sizeof(cb->args) < offsetofend(struct dump_ctx, next_allowedip) + sizeof(*a)); \
+	struct dump_ctx_info *a = &DUMP_CTX(cb)->dump_info; \
 	a->attrs = genl_family_attrbuf(&genl_family); \
 	if (nlmsg_parse(cb->nlh, GENL_HDRLEN + genl_family.hdrsize, a->attrs, genl_family.maxattr, device_policy, NULL) < 0) \
 		memset(a->attrs, 0, (genl_family.maxattr + 1) * sizeof(struct nlattr *)); \
