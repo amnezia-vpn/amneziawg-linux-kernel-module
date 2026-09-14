@@ -452,6 +452,7 @@ void wg_packet_send_staged_packets(struct wg_peer *peer)
 	struct noise_keypair *keypair;
 	struct sk_buff_head packets;
 	struct sk_buff *skb;
+	u16_range_t reject_after_time = READ_ONCE(peer->device->reject_after_time);
 
 	/* Steal the current queue into our local one. */
 	__skb_queue_head_init(&packets);
@@ -471,7 +472,8 @@ void wg_packet_send_staged_packets(struct wg_peer *peer)
 	if (unlikely(!READ_ONCE(keypair->sending.is_valid)))
 		goto out_nokey;
 	if (unlikely(wg_birthdate_has_expired(keypair->sending.birthdate,
-					      REJECT_AFTER_TIME)))
+					      !u16_range_is_zero(reject_after_time) ?
+					      u16_range_hi(reject_after_time) : REJECT_AFTER_TIME)))
 		goto out_invalid;
 
 	/* After we know we have a somewhat valid key, we now try to assign

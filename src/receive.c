@@ -333,14 +333,18 @@ static bool decrypt_packet(struct sk_buff *skb, struct noise_keypair *keypair
 {
 	struct scatterlist sg[MAX_SKB_FRAGS + 8];
 	struct sk_buff *trailer;
+	u16_range_t reject_after_time;
 	unsigned int offset;
 	int num_frags;
 
 	if (unlikely(!keypair))
 		return false;
 
+	reject_after_time = READ_ONCE(keypair->entry.peer->device->reject_after_time);
 	if (unlikely(!READ_ONCE(keypair->receiving.is_valid) ||
-		  wg_birthdate_has_expired(keypair->receiving.birthdate, REJECT_AFTER_TIME) ||
+		  wg_birthdate_has_expired(keypair->receiving.birthdate,
+					    !u16_range_is_zero(reject_after_time) ?
+					    u16_range_hi(reject_after_time) : REJECT_AFTER_TIME) ||
 		  READ_ONCE(keypair->receiving_counter.counter) >= REJECT_AFTER_MESSAGES)) {
 		WRITE_ONCE(keypair->receiving.is_valid, false);
 		return false;
