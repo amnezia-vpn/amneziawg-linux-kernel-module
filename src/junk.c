@@ -321,6 +321,14 @@ int jp_spec_setup(struct jp_spec *spec, const char* str) {
     spec->desc = desc;
 
 error:
+    if (err) {
+        kfree(spec->pkt);
+        spec->pkt = NULL;
+        kfree(spec->mods);
+        spec->mods = NULL;
+        spec->pkt_size = 0;
+        spec->mods_size = 0;
+    }
     mutex_unlock(&spec->lock);
     list_for_each_entry_safe(tag, tmp, &head, head) {
         jp_tag_free(tag);
