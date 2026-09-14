@@ -261,16 +261,16 @@ static inline int generate_ipv6_address_with_prefix(const struct ipv6_prefix *pr
 	prefix_bytes = prefix->prefix_len / 8;
 	prefix_bits = prefix->prefix_len % 8;
 
-	if (prefix_bytes < 16) {
-		get_random_bytes(addr + prefix_bytes, 16 - prefix_bytes);
-
-		if (prefix_bits != 0) {
-			get_random_bytes(&random_byte, sizeof(random_byte));
-			mask = (u8)(0xFF << (8 - prefix_bits));
-			addr[prefix_bytes] &= mask;
-			addr[prefix_bytes] |= random_byte & ~mask;
-		}
+	if (prefix_bits != 0) {
+		get_random_bytes(&random_byte, sizeof(random_byte));
+		mask = (u8)(0xFF << (8 - prefix_bits));
+		addr[prefix_bytes] = (addr[prefix_bytes] & mask) |
+			(random_byte & ~mask);
+		++prefix_bytes;
 	}
+
+	if (prefix_bytes < 16)
+		get_random_bytes(addr + prefix_bytes, 16 - prefix_bytes);
 
 	return 0;
 }
@@ -1048,8 +1048,8 @@ skip_set_private_key:
 		int rem;
 
 		nla_for_each_nested(attr, info->attrs[WGDEVICE_A_PEERS], rem) {
-			ret = nla_parse_nested(peer, WGPEER_A_MAX, attr,
-					       peer_policy, NULL);
+			ret = nla_parse_nested(peer, WGPEER_A_MAX,
+					       attr, peer_policy, NULL);
 			if (ret < 0)
 				goto out;
 			ret = set_peer(wg, peer);
