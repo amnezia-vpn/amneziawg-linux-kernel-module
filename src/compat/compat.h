@@ -1288,7 +1288,8 @@ static inline void dev_sw_netstats_rx_add(struct net_device *dev, unsigned int l
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 91) && !defined(ISUBUNTU2004) && !defined(ISUBUNTU2204) && !defined(ISRHEL9)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 91) && !defined(ISUBUNTU2004) && !defined(ISUBUNTU2204) && !defined(ISRHEL9) && \
+	!(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 200) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
 #include <linux/timer.h>
 static inline int timer_delete(struct timer_list *timer)
 {
