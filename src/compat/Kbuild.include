@@ -54,6 +54,27 @@ ifeq ($(shell grep -s -F "addr_gen_mode" "$(srctree)/include/linux/ipv6.h"),)
 ccflags-y += -DCOMPAT_CANNOT_USE_DEV_CNF
 endif
 
+# Distribution kernels backport these without changing LINUX_VERSION_CODE:
+# RHEL 10.2 reports 6.12 yet has timer_container_of, netif_threaded_enable
+# and WQ_PERCPU, and CentOS Stream 10 adds struct sockaddr_inet and struct
+# rtnl_newlink_params. Look at the headers rather than the version, so
+# compat.h neither redefines them nor shadows them.
+ifneq ($(shell grep -s -F "define timer_container_of" "$(srctree)/include/linux/timer.h"),)
+ccflags-y += -DCOMPAT_HAS_TIMER_CONTAINER_OF
+endif
+ifneq ($(shell grep -s -F "struct sockaddr_inet {" "$(srctree)/include/linux/in6.h"),)
+ccflags-y += -DCOMPAT_HAS_SOCKADDR_INET
+endif
+ifneq ($(shell grep -s -F "netif_threaded_enable" "$(srctree)/include/linux/netdevice.h"),)
+ccflags-y += -DCOMPAT_HAS_NETIF_THREADED_ENABLE
+endif
+ifneq ($(shell grep -s -F "struct rtnl_newlink_params {" "$(srctree)/include/net/rtnetlink.h"),)
+ccflags-y += -DCOMPAT_HAS_RTNL_NEWLINK_PARAMS
+endif
+ifneq ($(shell grep -s -F "WQ_PERCPU" "$(srctree)/include/linux/workqueue.h"),)
+ccflags-y += -DCOMPAT_HAS_WQ_PERCPU
+endif
+
 ifdef CONFIG_HZ
 ifeq ($(wildcard $(CURDIR)/include/generated/timeconst.h),)
 ccflags-y += $(shell bash -c '((a=$(CONFIG_HZ), b=1000000)); while ((b > 0)); do ((t=b, b=a%b, a=t)); done; echo "-DHZ_TO_USEC_NUM=$$((1000000/a)) -DHZ_TO_USEC_DEN=$$(($(CONFIG_HZ)/a))";')

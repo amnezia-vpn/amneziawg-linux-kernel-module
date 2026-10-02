@@ -1296,11 +1296,11 @@ static inline int timer_delete(struct timer_list *timer)
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0) && !defined(COMPAT_HAS_TIMER_CONTAINER_OF)
 #define timer_container_of from_timer
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0) && !defined(COMPAT_HAS_SOCKADDR_INET)
 #include <linux/in6.h>
 struct sockaddr_inet {
 	unsigned short	sa_family;
@@ -1309,7 +1309,7 @@ struct sockaddr_inet {
 };
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0) && !defined(COMPAT_HAS_NETIF_THREADED_ENABLE)
 #include <linux/netdevice.h>
 static inline void netif_threaded_enable(struct net_device *dev) { }
 #endif
@@ -1323,7 +1323,7 @@ static inline void netif_threaded_enable(struct net_device *dev) { }
 #define COMPAT_CANNOT_USE_PCPU_STAT_TYPE
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 15, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 15, 0) && !defined(COMPAT_HAS_RTNL_NEWLINK_PARAMS)
 #define COMPAT_CANNOT_USE_RTNL_NEWLINK_PARAMS
 struct rtnl_newlink_params {
 	struct net *src_net;
@@ -1450,7 +1450,7 @@ static inline void __compat_chacha20_crypt(struct chacha_state *state,
 #define udp_tunnel_sock_release(sk) udp_tunnel_sock_release(sk->sk_socket)
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0) && !defined(COMPAT_HAS_WQ_PERCPU)
 #define WQ_PERCPU 0
 #endif
 
