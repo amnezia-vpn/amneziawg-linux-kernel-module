@@ -1444,11 +1444,29 @@ static inline void __compat_chacha20_crypt(struct chacha_state *state,
 
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 1, 5)
+/* 7.1.5 switched these to struct sock *, but distros backport the change
+ * piecemeal (Ubuntu 7.0.0-38 only took setup_udp_tunnel_sock) without
+ * bumping LINUX_VERSION_CODE, so check each declared signature instead.
+ */
 #include <net/udp_tunnel.h>
-#define setup_udp_tunnel_sock(net, sk, sock_cfg) setup_udp_tunnel_sock(net, sk->sk_socket, sock_cfg)
-#define udp_tunnel_sock_release(sk) udp_tunnel_sock_release(sk->sk_socket)
-#endif
+
+static inline void __compat_setup_udp_tunnel_sock(struct net *net, struct sock *sk,
+						  struct udp_tunnel_sock_cfg *cfg)
+{
+	setup_udp_tunnel_sock(net, __builtin_choose_expr(
+		__builtin_types_compatible_p(typeof(&setup_udp_tunnel_sock),
+			void (*)(struct net *, struct sock *, struct udp_tunnel_sock_cfg *)),
+		sk, sk->sk_socket), cfg);
+}
+#define setup_udp_tunnel_sock(net, sk, cfg) __compat_setup_udp_tunnel_sock((net), (sk), (cfg))
+
+static inline void __compat_udp_tunnel_sock_release(struct sock *sk)
+{
+	udp_tunnel_sock_release(__builtin_choose_expr(
+		__builtin_types_compatible_p(typeof(&udp_tunnel_sock_release), void (*)(struct sock *)),
+		sk, sk->sk_socket));
+}
+#define udp_tunnel_sock_release(sk) __compat_udp_tunnel_sock_release(sk)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0)
 #define WQ_PERCPU 0
