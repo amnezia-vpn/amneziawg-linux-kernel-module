@@ -39,6 +39,19 @@ static void __compat_sk_data_ready(struct sock *sk)
 		encap_rcv(sk, skb);
 	}
 }
+
+#include <linux/version.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 38)
+static inline void setup_udp_tunnel_sock(struct net *net, struct sock *sk,
+                           struct udp_tunnel_sock_cfg *cfg)
+{
+	inet_sk(sk)->mc_loop = 0;
+	encap_rcv = cfg->encap_rcv;
+	rcu_assign_sk_user_data(sk, cfg->sk_user_data);
+	sk->sk_data_ready = __compat_sk_data_ready;
+}
+#else
 static inline void setup_udp_tunnel_sock(struct net *net, struct socket *sock,
                            struct udp_tunnel_sock_cfg *cfg)
 {
@@ -48,6 +61,12 @@ static inline void setup_udp_tunnel_sock(struct net *net, struct socket *sock,
 	rcu_assign_sk_user_data(sk, cfg->sk_user_data);
 	sk->sk_data_ready = __compat_sk_data_ready;
 }
+#endif
+
+
+
+
+
 static inline void udp_tunnel_sock_release(struct socket *sock)
 {
 	rcu_assign_sk_user_data(sock->sk, NULL);
