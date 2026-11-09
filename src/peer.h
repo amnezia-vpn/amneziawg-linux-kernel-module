@@ -84,6 +84,7 @@ static inline struct wg_peer *wg_peer_get(struct wg_peer *peer)
 void wg_peer_put(struct wg_peer *peer);
 void wg_peer_remove(struct wg_peer *peer);
 void wg_peer_remove_all(struct wg_device *wg);
+void wg_peer_remove_work(struct work_struct *work);
 
 int wg_peer_init(void);
 void wg_peer_uninit(void);
