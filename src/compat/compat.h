@@ -1446,7 +1446,9 @@ static inline void __compat_chacha20_crypt(struct chacha_state *state,
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(7, 1, 5)
 #include <net/udp_tunnel.h>
+#if !(defined(UTS_UBUNTU_RELEASE_ABI) && LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0) && UTS_UBUNTU_RELEASE_ABI >= 38)
 #define setup_udp_tunnel_sock(net, sk, sock_cfg) setup_udp_tunnel_sock(net, sk->sk_socket, sock_cfg)
+#endif
 #define udp_tunnel_sock_release(sk) udp_tunnel_sock_release(sk->sk_socket)
 #endif
 
