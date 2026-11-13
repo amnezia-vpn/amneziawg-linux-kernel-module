@@ -14,6 +14,7 @@
 #include <linux/lockdep.h>
 #include <linux/rcupdate.h>
 #include <linux/list.h>
+#include <linux/rtnetlink.h>
 
 static struct kmem_cache *peer_cache;
 static atomic64_t peer_counter = ATOMIC64_INIT(0);
@@ -96,19 +97,30 @@ static void peer_make_dead(struct wg_peer *peer)
 	/* The caller must now synchronize_net() for this to take effect. */
 }
 
-static void peer_remove_after_dead(struct wg_peer *peer)
+/* Finish removing a list of dead peers, linked through peer_list. They are
+ * out of all the lookup structures, is_dead is set and synchronize_net() has
+ * passed since. The flushes below can take minutes when the CPUs running the
+ * crypt workers are saturated with softirq, so single peer removals run this
+ * from wg->peer_remove_wq, without rtnl and for all peers queued so far.
+ */
+static void peers_remove_after_dead(struct wg_device *wg, struct list_head *dead,
+				    bool take_rtnl)
 {
-	WARN_ON(!peer->is_dead);
+	struct wg_peer *peer, *temp;
 
-	/* No more keypairs can be created for this peer, since is_dead protects
-	 * add_new_keypair, so we can now destroy existing ones.
-	 */
-	wg_noise_keypairs_clear(&peer->keypairs);
+	list_for_each_entry(peer, dead, peer_list) {
+		WARN_ON(!peer->is_dead);
 
-	/* Destroy all ongoing timers that were in-flight at the beginning of
-	 * this function.
-	 */
-	wg_timers_stop(peer);
+		/* No more keypairs can be created for this peer, since is_dead
+		 * protects add_new_keypair, so we can now destroy existing ones.
+		 */
+		wg_noise_keypairs_clear(&peer->keypairs);
+
+		/* Destroy all ongoing timers that were in-flight at the
+		 * beginning of this function.
+		 */
+		wg_timers_stop(peer);
+	}
 
 	/* The transition between packet encryption/decryption queues isn't
 	 * guarded by is_dead, but each reference's life is strictly bounded by
@@ -118,20 +130,32 @@ static void peer_remove_after_dead(struct wg_peer *peer)
 	 */
 
 	/* a) For encrypt/decrypt. */
-	flush_workqueue(peer->device->packet_crypt_wq);
+	flush_workqueue(wg->packet_crypt_wq);
 	/* b.1) For send (but not receive, since that's napi). */
-	flush_workqueue(peer->device->packet_crypt_wq);
+	flush_workqueue(wg->packet_crypt_wq);
 	/* b.2.1) For receive (but not send, since that's wq). */
-	napi_disable(&peer->napi);
-	/* b.2.1) It's now safe to remove the napi struct, which must be done
-	 * here from process context.
+	list_for_each_entry(peer, dead, peer_list)
+		napi_disable(&peer->napi);
+	/* b.2.1) It's now safe to remove the napi structs, which must be done
+	 * here from process context. dev->napi_list is also changed by
+	 * wg_peer_create() under rtnl: take it unless the caller holds it or
+	 * the device is already unregistered (wg_destruct). Per peer: with
+	 * threaded napi, __netif_napi_del() also stops the napi kthread, and a
+	 * batch can be large. One synchronize_net() covers the whole list.
 	 */
-	netif_napi_del(&peer->napi);
+	list_for_each_entry(peer, dead, peer_list) {
+		if (take_rtnl)
+			rtnl_lock();
+		__netif_napi_del(&peer->napi);
+		if (take_rtnl)
+			rtnl_unlock();
+	}
+	synchronize_net();
 
 	/* Ensure any workstructs we own (like transmit_handshake_work or
 	 * clear_peer_work) no longer are in use.
 	 */
-	flush_workqueue(peer->device->handshake_send_wq);
+	flush_workqueue(wg->handshake_send_wq);
 
 	/* After the above flushes, a peer might still be active in a few
 	 * different contexts: 1) from xmit(), before hitting is_dead and
@@ -150,8 +174,24 @@ static void peer_remove_after_dead(struct wg_peer *peer)
 	 * with a refcount of zero, so no new reference is taken.
 	 */
 
-	--peer->device->num_peers;
-	wg_peer_put(peer);
+	list_for_each_entry_safe(peer, temp, dead, peer_list) {
+		list_del_init(&peer->peer_list);
+		wg_peer_put(peer);
+	}
+}
+
+void wg_peer_remove_work(struct work_struct *work)
+{
+	struct wg_device *wg = container_of(work, struct wg_device,
+					    peer_remove_work);
+	LIST_HEAD(dead);
+
+	spin_lock(&wg->dead_peers_lock);
+	list_splice_init(&wg->dead_peers, &dead);
+	spin_unlock(&wg->dead_peers_lock);
+	if (list_empty(&dead))
+		return;
+	peers_remove_after_dead(wg, &dead, true);
 }
 
 /* We have a separate "remove" function make sure that all active places where
@@ -160,13 +200,27 @@ static void peer_remove_after_dead(struct wg_peer *peer)
  */
 void wg_peer_remove(struct wg_peer *peer)
 {
+	struct wg_device *wg;
+
 	if (unlikely(!peer))
 		return;
-	lockdep_assert_held(&peer->device->device_update_lock);
+	wg = peer->device;
+	lockdep_assert_held(&wg->device_update_lock);
 
 	peer_make_dead(peer);
 	synchronize_net();
-	peer_remove_after_dead(peer);
+	--wg->num_peers;
+
+	/* The rest waits for the crypt and handshake queues. Doing that here
+	 * would hold rtnl, taken by our netlink callers, for as long as a
+	 * saturated CPU keeps a crypt worker busy. So hand the peer over to
+	 * wg->peer_remove_wq. Until then it is dead and unreachable, exactly as
+	 * in wg_peer_remove_all() between peer_make_dead() and the rest.
+	 */
+	spin_lock(&wg->dead_peers_lock);
+	list_add_tail(&peer->peer_list, &wg->dead_peers);
+	spin_unlock(&wg->dead_peers_lock);
+	queue_work(wg->peer_remove_wq, &wg->peer_remove_work);
 }
 
 void wg_peer_remove_all(struct wg_device *wg)
@@ -182,10 +236,10 @@ void wg_peer_remove_all(struct wg_device *wg)
 	list_for_each_entry_safe(peer, temp, &wg->peer_list, peer_list) {
 		peer_make_dead(peer);
 		list_add_tail(&peer->peer_list, &dead_peers);
+		--wg->num_peers;
 	}
 	synchronize_net();
-	list_for_each_entry_safe(peer, temp, &dead_peers, peer_list)
-		peer_remove_after_dead(peer);
+	peers_remove_after_dead(wg, &dead_peers, false);
 }
 
 static void rcu_release(struct rcu_head *rcu)

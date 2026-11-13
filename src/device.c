@@ -263,12 +263,18 @@ static void wg_destruct(struct net_device *dev)
 	rtnl_lock();
 	list_del(&wg->device_list);
 	rtnl_unlock();
+	/* Let queued peer removals finish while the queues they flush are
+	 * still alive. The device is unregistered, so no new ones come. Not
+	 * under device_update_lock: the removal work takes rtnl.
+	 */
+	flush_workqueue(wg->peer_remove_wq);
 	mutex_lock(&wg->device_update_lock);
 	rcu_assign_pointer(wg->creating_net, NULL);
 	wg->incoming_port = 0;
 	wg_socket_reinit(wg, NULL, NULL);
 	/* The final references are cleared in the below calls to destroy_workqueue. */
 	wg_peer_remove_all(wg);
+	destroy_workqueue(wg->peer_remove_wq);
 	destroy_workqueue(wg->handshake_receive_wq);
 	destroy_workqueue(wg->handshake_send_wq);
 	destroy_workqueue(wg->packet_crypt_wq);
@@ -363,6 +369,9 @@ static int wg_newlink(struct net_device *dev,
 	wg_allowedips_init(&wg->peer_allowedips);
 	wg_cookie_checker_init(&wg->cookie_checker, wg);
 	INIT_LIST_HEAD(&wg->peer_list);
+	INIT_LIST_HEAD(&wg->dead_peers);
+	spin_lock_init(&wg->dead_peers_lock);
+	INIT_WORK(&wg->peer_remove_work, wg_peer_remove_work);
 	wg->device_update_gen = 1;
 
 	wg->peer_hashtable = wg_pubkey_hashtable_alloc();
@@ -394,10 +403,15 @@ static int wg_newlink(struct net_device *dev,
 	if (!wg->packet_crypt_wq)
 		goto err_destroy_handshake_send;
 
+	wg->peer_remove_wq = alloc_ordered_workqueue("wg-rm-%s",
+			0, dev->name);
+	if (!wg->peer_remove_wq)
+		goto err_destroy_packet_crypt;
+
 	ret = wg_packet_queue_init(&wg->encrypt_queue, wg_packet_encrypt_worker,
 				   MAX_QUEUED_PACKETS);
 	if (ret < 0)
-		goto err_destroy_packet_crypt;
+		goto err_destroy_peer_remove;
 
 	ret = wg_packet_queue_init(&wg->decrypt_queue, wg_packet_decrypt_worker,
 				   MAX_QUEUED_PACKETS);
@@ -436,6 +450,8 @@ err_free_decrypt_queue:
 	wg_packet_queue_free(&wg->decrypt_queue, false);
 err_free_encrypt_queue:
 	wg_packet_queue_free(&wg->encrypt_queue, false);
+err_destroy_peer_remove:
+	destroy_workqueue(wg->peer_remove_wq);
 err_destroy_packet_crypt:
 	destroy_workqueue(wg->packet_crypt_wq);
 err_destroy_handshake_send:

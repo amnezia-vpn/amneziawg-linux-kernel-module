@@ -18,6 +18,7 @@
 #include <linux/netdevice.h>
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
+#include <linux/spinlock.h>
 #include <linux/net.h>
 #include <linux/ptr_ring.h>
 
@@ -47,6 +48,11 @@ struct wg_device {
 	struct net __rcu *creating_net;
 	struct noise_static_identity static_identity;
 	struct workqueue_struct *packet_crypt_wq,*handshake_receive_wq, *handshake_send_wq;
+	/* Single peer removals finish here, outside of rtnl. */
+	struct workqueue_struct *peer_remove_wq;
+	struct work_struct peer_remove_work;
+	struct list_head dead_peers;
+	spinlock_t dead_peers_lock;
 	struct cookie_checker cookie_checker;
 	struct pubkey_hashtable *peer_hashtable;
 	struct index_hashtable *index_hashtable;
