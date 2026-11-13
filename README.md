@@ -80,14 +80,11 @@ You may need to install kernel headers and/or build essentials packages before r
     cd amneziawg-linux-kernel-module/src
     ```
 
-2. Now, if you run modern Linux with kernel version 5.6+, you need to download your kernel's source from anywhere possible
-and link resulting tree to `kernel` symlink:
-    
-    ```shell
-    ln -s /path/to/kernel/source kernel
-    ```
-    
-    Please note to find and provide full kernel sourcetree, not only headers. **If you run on legacy kernel (<5.6), you do not need to perform this step.**
+2. Install the headers for the kernel you want to build against. By default, the module build uses the kernel build directory at
+   `/lib/modules/$(uname -r)/build`, so a full kernel source tree and a `src/kernel` symlink are not required on modern kernels.
+
+   If your distribution ships incomplete headers, or you are building against a custom/legacy kernel, point `KERNELDIR` at a
+   prepared kernel build tree when running `make`.
 
 3. Now perform build and installation:
     ```shell
