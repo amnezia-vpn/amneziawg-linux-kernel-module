@@ -28,7 +28,7 @@ static void update_rx_stats(struct wg_peer *peer, size_t len)
 	peer->rx_bytes += len;
 }
 
-static inline __le32 awg_decoded_type(u8 data[4], u8 hash[4]) {
+static inline __le32 awg_decoded_value(u8 data[4], u8 hash[4]) {
 	u8 buf[4];
 	buf[0] = data[0] ^ hash[0];
 	buf[1] = data[1] ^ hash[1];
@@ -37,8 +37,38 @@ static inline __le32 awg_decoded_type(u8 data[4], u8 hash[4]) {
 	return ((struct message_header*)buf)->type;
 }
 
+static inline bool awg_is_known_transport_packet(struct sk_buff *skb,
+	struct wg_device *wg, u8 hash[8])
+{
+	struct wg_peer *peer = NULL;
+	unsigned int expected_len;
+	u8 buf[8];
+	void *ptr;
+	__le32 key_idx;
+	bool known;
+
+	expected_len = wg->transport_padding + MESSAGE_MINIMUM_LENGTH;
+	if (skb->len < expected_len)
+		return false;
+
+	ptr = skb_header_pointer(skb, wg->transport_padding, sizeof(buf), buf);
+	if (!ptr ||
+		!u32_range_contains(wg->transport_header,
+			le32_to_cpu(awg_decoded_value(ptr, hash))))
+		return false;
+
+	key_idx = awg_decoded_value((u8 *)ptr + sizeof(struct message_header),
+				    hash + sizeof(struct message_header));
+	known = wg_index_hashtable_lookup(wg->index_hashtable,
+					  INDEX_HASHTABLE_KEYPAIR, key_idx,
+					  &peer) != NULL;
+	if (known)
+		wg_peer_put(peer);
+	return known;
+}
+
 static inline size_t awg_determine_type_and_padding(struct sk_buff *skb,
-	struct wg_device *wg, u8 hash[4], u16 *res_padding, u32 *res_type)
+	struct wg_device *wg, u8 hash[8], u16 *res_padding, u32 *res_type)
 {
 	void *ptr;
 	unsigned int expected_len;
@@ -51,7 +81,12 @@ static inline size_t awg_determine_type_and_padding(struct sk_buff *skb,
 	if ((random_trailers ? skb->len >= expected_len : skb->len == expected_len) &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->init_header,
-			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
+			le32_to_cpu(awg_decoded_value(ptr, hash)))) {
+		if (random_trailers && awg_is_known_transport_packet(skb, wg, hash)) {
+			*res_padding = wg->transport_padding;
+			*res_type = MESSAGE_DATA;
+			return sizeof(struct message_data);
+		}
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_INITIATION;
 		return sizeof(struct message_handshake_initiation);
@@ -62,7 +97,12 @@ static inline size_t awg_determine_type_and_padding(struct sk_buff *skb,
 	if ((random_trailers ? skb->len >= expected_len : skb->len == expected_len) &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->resp_header,
-			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
+			le32_to_cpu(awg_decoded_value(ptr, hash)))) {
+		if (random_trailers && awg_is_known_transport_packet(skb, wg, hash)) {
+			*res_padding = wg->transport_padding;
+			*res_type = MESSAGE_DATA;
+			return sizeof(struct message_data);
+		}
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_RESPONSE;
 		return sizeof(struct message_handshake_response);
@@ -73,7 +113,12 @@ static inline size_t awg_determine_type_and_padding(struct sk_buff *skb,
 	if ((random_trailers ? skb->len >= expected_len : skb->len == expected_len) &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->cookie_header, 
-			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
+			le32_to_cpu(awg_decoded_value(ptr, hash)))) {
+		if (random_trailers && awg_is_known_transport_packet(skb, wg, hash)) {
+			*res_padding = wg->transport_padding;
+			*res_type = MESSAGE_DATA;
+			return sizeof(struct message_data);
+		}
 		*res_padding = padding;
 		*res_type = MESSAGE_HANDSHAKE_COOKIE;
 		return sizeof(struct message_handshake_cookie);
@@ -84,7 +129,7 @@ static inline size_t awg_determine_type_and_padding(struct sk_buff *skb,
 	if (skb->len >= expected_len &&
 		(ptr = skb_header_pointer(skb, padding, sizeof(buf), buf)) != NULL &&
 		u32_range_contains(wg->transport_header,
-			le32_to_cpu(awg_decoded_type(ptr, hash)))) {
+			le32_to_cpu(awg_decoded_value(ptr, hash)))) {
 		*res_padding = padding;
 		*res_type = MESSAGE_DATA;
 		return sizeof(struct message_data);
@@ -102,7 +147,7 @@ static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
 	struct chacha_state state;
 	size_t data_offset, data_len, header_len;
 	struct udphdr *udp;
-	u8 buf[HEADER_PROTECTION_NONCE_SIZE], *ptr, hash[4] = {0};
+	u8 buf[HEADER_PROTECTION_NONCE_SIZE], *ptr, hash[8] = {0};
 	u32 type;
 	u16 padding;
 	bool protected = false;
