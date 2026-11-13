@@ -63,7 +63,8 @@ struct wg_device {
 	u32 fwmark;
 	u16 init_padding, resp_padding, cookie_padding, transport_padding;
 	u16 incoming_port;
-	u16 jc, jmin, jmax;
+	u16 jc;
+	u16_range_t junk_packet_size;
 	bool random_trailers, disable_cookies;
 };
 

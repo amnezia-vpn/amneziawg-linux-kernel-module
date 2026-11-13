@@ -26,6 +26,10 @@ static inline bool u32_range_is_zero(u32_range_t range) {
     return range == 0;
 }
 
+static inline bool u32_range_is_valid(u32_range_t range) {
+    return u32_range_lo(range) <= u32_range_hi(range);
+}
+
 static inline bool u32_range_overlap(u32_range_t left, u32_range_t right) {
     return u32_range_lo(left) <= u32_range_hi(right) && u32_range_lo(right) <= u32_range_hi(left);
 }
@@ -54,6 +58,10 @@ static inline bool u16_range_contains(u16_range_t range, u16 val) {
 
 static inline bool u16_range_is_zero(u16_range_t range) {
     return range == 0;
+}
+
+static inline bool u16_range_is_valid(u16_range_t range) {
+    return u16_range_lo(range) <= u16_range_hi(range);
 }
 
 static inline bool u16_range_overlap(u16_range_t left, u16_range_t right) {

@@ -4,6 +4,7 @@
 #include "messages.h"
 
 #include <linux/types.h>
+#include <linux/spinlock.h>
 #include <crypto/chacha.h>
 
 struct wg_device;
@@ -15,12 +16,12 @@ enum header_protection_lengths {
 
 struct header_protection {
     u32 key[CHACHA_KEY_WORDS];
-    struct rw_semaphore lock;
+    rwlock_t lock;
     bool has_protection;
 };
 
 bool awg_header_protection_init(struct chacha_state *state, struct wg_device *dev, u8 *nonce);
 void awg_header_protection_set_key(struct header_protection *p, u8 key[HEADER_PROTECTION_KEY_SIZE]);
-void awg_header_protection_get_key(struct header_protection *p, u8 key[HEADER_PROTECTION_KEY_SIZE]);
+bool awg_header_protection_get_key(struct header_protection *p, u8 key[HEADER_PROTECTION_KEY_SIZE]);
 
 #endif

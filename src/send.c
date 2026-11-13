@@ -32,6 +32,7 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 	void *buffer;
 	u8 ds;
 	u16 junk_packet_count, junk_packet_size;
+	u16_range_t junk_packet_sizes = READ_ONCE(wg->junk_packet_size);
 	int i;
 	struct jp_spec* spec;
 	u16 min_timeout = !u16_range_is_zero(peer->device->rekey_timeout) ?
@@ -50,25 +51,29 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 	for (i = 0; i < ARRAY_SIZE(wg->ispecs); ++i)
 	{
 		spec = &wg->ispecs[i];
+		mutex_lock(&spec->lock);
 		if (spec->pkt_size > 0) {
-			mutex_lock(&spec->lock);
 			jp_spec_applymods(spec, peer);
 			wg_socket_send_buffer_to_peer(peer, spec->pkt, spec->pkt_size, 0, 0, false);
 			atomic_inc(&peer->jp_packet_counter);
-			mutex_unlock(&spec->lock);
 		}
+		mutex_unlock(&spec->lock);
 	}
 	
-	if (wg->jc && wg->jmax) {
+	junk_packet_count = READ_ONCE(wg->jc);
+	if (junk_packet_count && u16_range_hi(junk_packet_sizes)) {
 		net_dbg_ratelimited("%s: Sending dummy junk packets to %llu (%pISpfsc)\n",
 			    peer->device->dev->name, peer->internal_id,
 			    &peer->endpoint.addr);
 
-		junk_packet_count = wg->jc;
-		buffer = kzalloc(wg->jmax, GFP_KERNEL);
+		buffer = kzalloc(u16_range_hi(junk_packet_sizes), GFP_KERNEL);
+		if (!buffer) {
+			wg_timers_handshake_initiated(peer);
+			return;
+		}
 
 		while (junk_packet_count-- > 0) {
-			junk_packet_size = (u16) get_random_u32_inclusive(wg->jmin, wg->jmax);
+			junk_packet_size = u16_range_pick_one(junk_packet_sizes);
 
 			get_random_bytes(buffer, junk_packet_size);
 			get_random_bytes(&ds, 1);

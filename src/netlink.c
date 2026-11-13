@@ -441,8 +441,8 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 		    nla_put_u32(skb, WGDEVICE_A_IFINDEX, wg->dev->ifindex) ||
 		    nla_put_string(skb, WGDEVICE_A_IFNAME, wg->dev->name) ||
 		    nla_put_u16(skb, WGDEVICE_A_JC, wg->jc) ||
-		    nla_put_u16(skb, WGDEVICE_A_JMIN, wg->jmin) ||
-		    nla_put_u16(skb, WGDEVICE_A_JMAX, wg->jmax) ||
+		    nla_put_u16(skb, WGDEVICE_A_JMIN, u16_range_lo(wg->junk_packet_size)) ||
+		    nla_put_u16(skb, WGDEVICE_A_JMAX, u16_range_hi(wg->junk_packet_size)) ||
 		    nla_put_u16(skb, WGDEVICE_A_S1, wg->init_padding) ||
 		    nla_put_u16(skb, WGDEVICE_A_S2,wg->resp_padding) ||
 			nla_put_u16(skb, WGDEVICE_A_S3, wg->cookie_padding) ||
@@ -473,15 +473,11 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 				nla_put_string(skb, WGDEVICE_A_I5, wg->ispecs[4].desc)))
 			goto out;
 
-		down_read(&wg->header_protection.lock);
-		if (wg->header_protection.has_protection) {
-			awg_header_protection_get_key(&wg->header_protection, buf);
+		if (awg_header_protection_get_key(&wg->header_protection, buf)) {
 			if (nla_put(skb, WGDEVICE_A_HEADER_PROTECTION_KEY, HEADER_PROTECTION_KEY_SIZE, buf)) {
-				up_read(&wg->header_protection.lock);
 				goto out;
 			}
 		}
-		up_read(&wg->header_protection.lock);
 
 		down_read(&wg->static_identity.lock);
 		if (wg->static_identity.has_identity) {
@@ -638,6 +634,11 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 		if (nla_get_u32(attrs[WGPEER_A_PROTOCOL_VERSION]) != 1)
 			goto out;
 	}
+	if (attrs[WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL] &&
+	    !u16_range_is_valid(nla_get_u32(attrs[WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL]))) {
+		ret = -EINVAL;
+		goto out;
+	}
 
 	peer = wg_pubkey_hashtable_lookup(wg->peer_hashtable,
 					  nla_data(attrs[WGPEER_A_PUBLIC_KEY]));
@@ -746,6 +747,34 @@ out:
 	return ret;
 }
 
+static int validate_device_ranges(struct wg_device *wg, struct nlattr **attrs,
+				  u16_range_t *junk_packet_size)
+{
+	static const int ranges[] = {
+		WGDEVICE_A_CONTENT_PADDING_ADDITION, WGDEVICE_A_REKEY_AFTER_TIME,
+		WGDEVICE_A_REKEY_TIMEOUT, WGDEVICE_A_REJECT_AFTER_TIME,
+		WGDEVICE_A_KEEPALIVE_TIMEOUT, WGDEVICE_A_MAX_HANDSHAKE_ATTEMPTS
+	};
+	static const int headers[] = {
+		WGDEVICE_A_H1, WGDEVICE_A_H2, WGDEVICE_A_H3, WGDEVICE_A_H4
+	};
+	u16_range_t previous = READ_ONCE(wg->junk_packet_size);
+	u16 jmin = attrs[WGDEVICE_A_JMIN] ? nla_get_u16(attrs[WGDEVICE_A_JMIN]) : u16_range_lo(previous);
+	u16 jmax = attrs[WGDEVICE_A_JMAX] ? nla_get_u16(attrs[WGDEVICE_A_JMAX]) : u16_range_hi(previous);
+	unsigned int i;
+
+	if (jmin > jmax)
+		return -EINVAL;
+	for (i = 0; i < ARRAY_SIZE(ranges); ++i)
+		if (attrs[ranges[i]] && !u16_range_is_valid(nla_get_u32(attrs[ranges[i]])))
+			return -EINVAL;
+	for (i = 0; i < ARRAY_SIZE(headers); ++i)
+		if (attrs[headers[i]] && !u32_range_is_valid(nla_get_u64(attrs[headers[i]])))
+			return -EINVAL;
+	u16_range_init(junk_packet_size, jmin, jmax);
+	return 0;
+}
+
 static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 {
 	struct wg_device *wg = lookup_interface(info->attrs, skb);
@@ -753,6 +782,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	u32 flags = 0;
 	int ret;
 	u16 val16;
+	u16_range_t junk_packet_size;
 	bool has_protection;
 
 	if (IS_ERR(wg)) {
@@ -779,6 +809,9 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 	}
 
+	ret = validate_device_ranges(wg, info->attrs, &junk_packet_size);
+	if (ret)
+		goto out;
 	++wg->device_update_gen;
 
 	if (info->attrs[WGDEVICE_A_FWMARK]) {
@@ -799,11 +832,7 @@ static int wg_set_device(struct sk_buff *skb, struct genl_info *info)
 	if (info->attrs[WGDEVICE_A_JC])
 		wg->jc = nla_get_u16(info->attrs[WGDEVICE_A_JC]);
 
-	if (info->attrs[WGDEVICE_A_JMIN])
-		wg->jmin = nla_get_u16(info->attrs[WGDEVICE_A_JMIN]);
-
-	if (info->attrs[WGDEVICE_A_JMAX])
-		wg->jmax = nla_get_u16(info->attrs[WGDEVICE_A_JMAX]);
+	WRITE_ONCE(wg->junk_packet_size, junk_packet_size);
 
 	if (info->attrs[WGDEVICE_A_S1]) {
 		val16 = nla_get_u16(info->attrs[WGDEVICE_A_S1]);

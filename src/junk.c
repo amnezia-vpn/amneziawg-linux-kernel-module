@@ -7,6 +7,10 @@
 #include <linux/string.h>
 #include <linux/random.h>
 #include <linux/ktime.h>
+#include <linux/ip.h>
+#include <linux/udp.h>
+
+#define JP_MAX_PACKET_SIZE (U16_MAX - sizeof(struct iphdr) - sizeof(struct udphdr))
 
 static int parse_b_tag(char* val, struct list_head* head) {
     int err;
@@ -109,7 +113,7 @@ static int parse_r_tag(char* val, struct list_head* head) {
     struct jp_tag* tag;
     int len;
 
-    if (!val || 0 > kstrtoint(val, 10, &len))
+    if (!val || kstrtoint(val, 10, &len) || len < 0 || len > JP_MAX_PACKET_SIZE)
         return -EINVAL;
 
     tag = kzalloc(sizeof(*tag), GFP_KERNEL);
@@ -140,7 +144,7 @@ static int parse_rc_tag(char* val, struct list_head* head) {
     struct jp_tag* tag;
     int len;
 
-    if (!val || 0 > kstrtoint(val, 10, &len))
+    if (!val || kstrtoint(val, 10, &len) || len < 0 || len > JP_MAX_PACKET_SIZE)
         return -EINVAL;
 
     tag = kzalloc(sizeof(*tag), GFP_KERNEL);
@@ -167,7 +171,7 @@ static int parse_rd_tag(char* val, struct list_head* head) {
     struct jp_tag* tag;
     int len;
 
-    if (!val || 0 > kstrtoint(val, 10, &len))
+    if (!val || kstrtoint(val, 10, &len) || len < 0 || len > JP_MAX_PACKET_SIZE)
         return -EINVAL;
 
     tag = kzalloc(sizeof(*tag), GFP_KERNEL);
@@ -252,28 +256,20 @@ int jp_spec_setup(struct jp_spec *spec, const char* str) {
     int pkt_size, mods_size;
     struct jp_tag *tag, *tmp;
     struct jp_modifier *mod;
-    char* buf, *desc;
+    struct jp_spec next = {0};
+    char *buf = NULL;
     LIST_HEAD(head);
 
     if (str == NULL)
         return 0;
 
-    mutex_lock(&spec->lock);
-
-    kfree(spec->pkt);
-    kfree(spec->mods);
-    spec->pkt = NULL;
-    spec->mods = NULL;
-    spec->pkt_size = 0;
-    spec->mods_size = 0;
-
-    desc = kstrdup(str, GFP_KERNEL);
-    if (!desc) {
+    next.desc = kstrdup(str, GFP_KERNEL);
+    if (!next.desc) {
         err = -ENOMEM;
         goto error;
     }
 
-    buf = kstrdup(desc, GFP_KERNEL);
+    buf = kstrdup(next.desc, GFP_KERNEL);
     if (!buf) {
         err = -ENOMEM;
         goto error;
@@ -287,41 +283,50 @@ int jp_spec_setup(struct jp_spec *spec, const char* str) {
     mods_size = 0;
 
     list_for_each_entry(tag, &head, head) {
+        if (tag->pkt_size < 0 || tag->pkt_size > JP_MAX_PACKET_SIZE - pkt_size) {
+            err = -EMSGSIZE;
+            goto error;
+        }
         pkt_size += tag->pkt_size;
 
         if (tag->func)
             ++mods_size;
     }
 
-    spec->pkt = kzalloc(pkt_size, GFP_KERNEL);
-    spec->mods = kzalloc(mods_size * sizeof(*spec->mods), GFP_KERNEL);
-    if (!spec->pkt || !spec->mods) {
+    next.pkt = kzalloc(pkt_size, GFP_KERNEL);
+    next.mods = kcalloc(mods_size, sizeof(*next.mods), GFP_KERNEL);
+    if (!next.pkt || !next.mods) {
         err = -ENOMEM;
         goto error;
     }
 
     list_for_each_entry_reverse(tag, &head, head) {
         if (tag->pkt) {
-            memcpy(spec->pkt + spec->pkt_size, tag->pkt, tag->pkt_size);
+            memcpy(next.pkt + next.pkt_size, tag->pkt, tag->pkt_size);
         }
 
         if (tag->func) {
-            mod = spec->mods + spec->mods_size;
+            mod = next.mods + next.mods_size;
             mod->func = tag->func;
-            mod->buf = spec->pkt + spec->pkt_size;
+            mod->buf = (char *)next.pkt + next.pkt_size;
             mod->buf_len = tag->pkt_size;
             
-            spec->mods_size++;
+            next.mods_size++;
         }
 
-        spec->pkt_size += tag->pkt_size;
+        next.pkt_size += tag->pkt_size;
     }
 
-    kfree(spec->desc);
-    spec->desc = desc;
+    mutex_lock(&spec->lock);
+    jp_spec_free(spec);
+    spec->desc = next.desc;
+    spec->pkt = next.pkt;
+    spec->mods = next.mods;
+    spec->pkt_size = next.pkt_size;
+    spec->mods_size = next.mods_size;
+    mutex_unlock(&spec->lock);
 
 error:
-    mutex_unlock(&spec->lock);
     list_for_each_entry_safe(tag, tmp, &head, head) {
         jp_tag_free(tag);
         list_del(&tag->head);
@@ -330,7 +335,7 @@ error:
 
     kfree(buf);
     if (err)
-        kfree(desc);
+        jp_spec_free(&next);
     return err;
 }
 
