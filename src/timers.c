@@ -223,8 +223,9 @@ void wg_timers_handshake_complete(struct wg_peer *peer)
  */
 void wg_timers_session_derived(struct wg_peer *peer)
 {
-	u16 timeout = !u16_range_is_zero(peer->device->reject_after_time) ?
-		u16_range_pick_one(peer->device->reject_after_time) : REJECT_AFTER_TIME;
+	u16_range_t reject_after_time = READ_ONCE(peer->device->reject_after_time);
+	u16 timeout = !u16_range_is_zero(reject_after_time) ?
+		u16_range_hi(reject_after_time) : REJECT_AFTER_TIME;
 
 	mod_peer_timer(peer, &peer->timer_zero_key_material,
 		       jiffies + timeout * 3 * HZ);
