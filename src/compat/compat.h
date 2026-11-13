@@ -1389,6 +1389,8 @@ static inline char *nla_strdup(const struct nlattr *nla, gfp_t flags)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 #include <asm/unaligned.h>
+#else
+#include <linux/unaligned.h>
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)

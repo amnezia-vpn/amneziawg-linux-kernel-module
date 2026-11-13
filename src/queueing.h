@@ -36,6 +36,7 @@ int wg_packet_rx_poll(struct napi_struct *napi, int budget);
 void wg_packet_decrypt_worker(struct work_struct *work);
 
 /* send.c APIs: */
+struct ws_bfd_marker;
 void wg_packet_send_queued_handshake_initiation(struct wg_peer *peer,
 						bool is_retry);
 void wg_packet_send_handshake_response(struct wg_peer *peer);
@@ -43,11 +44,15 @@ void wg_packet_send_handshake_cookie(struct wg_device *wg,
 				     struct sk_buff *initiating_skb,
 				     __le32 sender_index);
 void wg_packet_send_keepalive(struct wg_peer *peer);
+void wg_packet_send_bfd_reply(struct wg_peer *peer,
+			      const struct ws_bfd_marker *probe);
+void wg_packet_send_bfd_probe(struct wg_peer *peer);
 void wg_packet_purge_staged_packets(struct wg_peer *peer);
 void wg_packet_send_staged_packets(struct wg_peer *peer);
 /* Workqueue workers: */
 void wg_packet_handshake_send_worker(struct work_struct *work);
 void wg_packet_tx_worker(struct work_struct *work);
+void wg_packet_bfd_send_worker(struct work_struct *work);
 void wg_packet_encrypt_worker(struct work_struct *work);
 
 enum packet_state {

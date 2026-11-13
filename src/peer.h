@@ -69,6 +69,13 @@ struct wg_peer {
 	u64 internal_id;
 	atomic_t jp_packet_counter;
 	unsigned int udp_window;
+	/* BFD-style session-layer probe state (all lock-free). */
+	atomic_t bfd_probe_req;
+	struct work_struct bfd_work;
+	atomic64_t bfd_seq;
+	atomic64_t bfd_last_rtt_ns;
+	atomic64_t bfd_last_probe_ok_ts;
+	atomic_t bfd_loss;
 };
 
 struct wg_peer *wg_peer_create(struct wg_device *wg,

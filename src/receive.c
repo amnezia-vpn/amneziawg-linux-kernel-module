@@ -12,6 +12,7 @@
 #include "cookie.h"
 #include "socket.h"
 #include "type.h"
+#include "bfd.h"
 
 #ifdef COMPAT_CRYPTO_IS_ZINC
 #include <linux/simd.h>
@@ -454,6 +455,32 @@ static void wg_packet_consume_data_done(struct wg_peer *peer,
 				    dev->name, peer->internal_id,
 				    &peer->endpoint.addr);
 		goto packet_processed;
+	}
+
+	/* Session-layer BFD probe/reply marker: handle it here, before it
+	 * can reach the TUN interface or allowedips validation. The peer
+	 * endpoint was already refreshed above, so a reply staged from
+	 * this context goes back to the source endpoint of the probe.
+	 */
+	if (unlikely(skb->len >= WS_BFD_MARKER_LEN)) {
+		u8 marker_buf[WS_BFD_MARKER_LEN];
+		const u8 *marker = skb_header_pointer(skb, 0,
+						      WS_BFD_MARKER_LEN,
+						      marker_buf);
+		struct ws_bfd_marker probe;
+
+		if (likely(marker && ws_bfd_decode(marker, &probe))) {
+			if (probe.type == WS_BFD_TYPE_PROBE) {
+				wg_packet_send_bfd_reply(peer, &probe);
+			} else {
+				atomic64_set(&peer->bfd_last_rtt_ns,
+					     ktime_get_real_ns() - probe.ts_send);
+				atomic64_set(&peer->bfd_last_probe_ok_ts,
+					     ktime_get_real_ns());
+				atomic_set(&peer->bfd_loss, 0);
+			}
+			goto packet_processed;
+		}
 	}
 
 	wg_timers_data_received(peer);

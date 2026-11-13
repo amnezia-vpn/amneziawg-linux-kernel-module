@@ -82,7 +82,8 @@ static const struct nla_policy peer_policy[WGPEER_A_MAX + 1] = {
 	[WGPEER_A_TX_BYTES]				= { .type = NLA_U64 },
 	[WGPEER_A_ALLOWEDIPS]				= { .type = NLA_NESTED },
 	[WGPEER_A_PROTOCOL_VERSION]			= { .type = NLA_U32 },
-	[WGPEER_A_ADVANCED_SECURITY]    		= { .type = NLA_FLAG }
+	[WGPEER_A_ADVANCED_SECURITY]    		= { .type = NLA_FLAG },
+	[WGPEER_A_SEND_PROBE]				= { .type = NLA_FLAG }
 };
 
 static const struct nla_policy allowedip_policy[WGALLOWEDIP_A_MAX + 1] = {
@@ -333,6 +334,19 @@ get_peer(struct wg_peer *peer, struct sk_buff *skb, struct dump_ctx *ctx)
 		    nla_put_u64_64bit(skb, WGPEER_A_RX_BYTES, peer->rx_bytes,
 				      WGPEER_A_UNSPEC) ||
 		    nla_put_u32(skb, WGPEER_A_PROTOCOL_VERSION, 1))
+			goto err;
+
+		if (nla_put_u64_64bit(skb, WGPEER_A_BFD_LAST_RTT_NS,
+				      atomic64_read(&peer->bfd_last_rtt_ns),
+				      WGPEER_A_UNSPEC) ||
+		    nla_put_u64_64bit(skb, WGPEER_A_BFD_LAST_OK_TS,
+				      atomic64_read(&peer->bfd_last_probe_ok_ts),
+				      WGPEER_A_UNSPEC) ||
+		    nla_put_u64_64bit(skb, WGPEER_A_BFD_SEQ,
+				      atomic64_read(&peer->bfd_seq),
+				      WGPEER_A_UNSPEC) ||
+		    nla_put_u32(skb, WGPEER_A_BFD_LOSS,
+				(u32)atomic_read(&peer->bfd_loss)))
 			goto err;
 
 #ifndef OMIT_ENDPOINTS
@@ -733,6 +747,16 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 		peer->persistent_keepalive_interval = persistent_keepalive_interval;
 		if (send_keepalive)
 			wg_packet_send_keepalive(peer);
+	}
+
+	if (attrs[WGPEER_A_SEND_PROBE]) {
+		/* Only set a flag here: set_peer runs under device_update_lock
+		 * and the probe is emitted asynchronously from bfd_work.
+		 */
+		atomic_set(&peer->bfd_probe_req, 1);
+		wg_peer_get(peer);
+		if (!queue_work(wg->handshake_send_wq, &peer->bfd_work))
+			wg_peer_put(peer);
 	}
 
 	if (netif_running(wg->dev))

@@ -49,6 +49,10 @@
  *                    ...
  *                ...
  *            WGPEER_A_PROTOCOL_VERSION: NLA_U32
+ *            WGPEER_A_BFD_LAST_RTT_NS: NLA_U64, RTT of the last BFD reply
+ *            WGPEER_A_BFD_LAST_OK_TS: NLA_U64, unix ns of the last BFD reply
+ *            WGPEER_A_BFD_LOSS: NLA_U32, consecutive probes without a reply
+ *            WGPEER_A_BFD_SEQ: NLA_U64, sequence number of the last probe sent
  *        0: NLA_NESTED
  *            ...
  *        ...
@@ -118,6 +122,8 @@
  *            WGPEER_A_ADVANCED_SECURITY: flag indicating that advanced security
  *                                       techniques provided by AmneziaWG should
  *                                       be used.
+ *            WGPEER_A_SEND_PROBE: flag causing a session-layer BFD probe to be
+ *                                 sent to this peer.
  *        0: NLA_NESTED
  *            ...
  *        ...
@@ -237,6 +243,11 @@ enum wgpeer_attribute {
 	WGPEER_A_ALLOWEDIPS,
 	WGPEER_A_PROTOCOL_VERSION,
 	WGPEER_A_ADVANCED_SECURITY,
+	WGPEER_A_SEND_PROBE,
+	WGPEER_A_BFD_LAST_RTT_NS,
+	WGPEER_A_BFD_LAST_OK_TS,
+	WGPEER_A_BFD_LOSS,
+	WGPEER_A_BFD_SEQ,
 	__WGPEER_A_LAST
 };
 #define WGPEER_A_MAX (__WGPEER_A_LAST - 1)
