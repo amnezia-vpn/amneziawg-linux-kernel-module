@@ -200,12 +200,7 @@ static inline int generate_ipv4_address_with_prefix(const struct ipv4_prefix *pr
 		return -EINVAL;
 
 	prefix_host_order = ntohl(prefix->prefix);
-
-	if (prefix->prefix_len == 32) {
-		suffix_mask = 0;
-	} else {
-		suffix_mask = (1U << (32 - prefix->prefix_len)) - 1;
-	}
+	suffix_mask = (u32)((1ULL << (32 - prefix->prefix_len)) - 1);
 
 	get_random_bytes(&random_suffix, sizeof(random_suffix));
 	random_suffix &= suffix_mask;
