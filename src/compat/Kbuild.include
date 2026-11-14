@@ -112,6 +112,10 @@ ifeq ($(wildcard $(srctree)/include/crypto/blake2s.h),)
 ccflags-y += -I$(kbuild-dir)/compat/crypto/blake2s/include
 endif
 
+ifeq ($(shell [ $(VERSION) -lt 5 -o \( $(VERSION) -eq 5 -a $(PATCHLEVEL) -lt 5 \) ] && echo y),y)
+ccflags-y += -I$(kbuild-dir)/compat/crypto/chacha/include
+endif
+
 ifeq ($(wildcard $(srctree)/include/crypto/chacha20poly1305.h),)
 ccflags-y += -I$(kbuild-dir)/compat/crypto/chacha20poly1305/include
 endif
