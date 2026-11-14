@@ -515,7 +515,15 @@ static int wg_get_device_dump(struct sk_buff *skb, struct netlink_callback *cb)
 	}
 	peer = list_prepare_entry(ctx->next_peer, &wg->peer_list, peer_list);
 	list_for_each_entry_continue(peer, &wg->peer_list, peer_list) {
-		if (get_peer(peer, skb, ctx)) {
+		const unsigned int peer_start_len = skb->len;
+		int peer_ret = get_peer(peer, skb, ctx);
+
+		if (peer_ret) {
+			if (peer_ret != -EMSGSIZE ||
+			    (skb->len == peer_start_len && next_peer_cursor == ctx->next_peer)) {
+				ret = peer_ret;
+				break;
+			}
 			done = false;
 			break;
 		}
