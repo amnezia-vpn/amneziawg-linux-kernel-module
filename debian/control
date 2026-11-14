@@ -4,6 +4,7 @@ Priority: optional
 Maintainer: unidentified attacker <ua@amnezia.org>
 Build-Depends:
  debhelper,
+ dh-sequence-dkms | dh-dkms | dkms,
  dkms
 Standards-Version: 4.5.1
 Homepage: https://amnezia.org
